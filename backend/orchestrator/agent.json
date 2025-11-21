@@ -1,0 +1,17 @@
+{
+  "name": "orchestrator_agent",
+  "version": "1.0.0",
+  "description": "The primary interface for user interactions. It routes tasks to specialized agents (Inventory, Policy, Notification) based on user intent.",
+  "capabilities": {
+    "reasoning": "high",
+    "planning": "coordinator"
+  },
+  "securitySchemes": {
+    "agent_oauth_2_0": {
+      "type": "oauth2"
+    }
+  },
+  "inputModes": ["text/plain"],
+  "outputModes": ["application/json"],
+  "url": "http://localhost:8000/orchestrator/a2a/interact"
+}

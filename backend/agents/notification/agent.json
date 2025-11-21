@@ -1,0 +1,26 @@
+{
+  "name": "notification_specialist",
+  "version": "1.1.0",
+  "description": "Handles external email communications with mandatory Human-in-the-Loop (HITL) approval workflow. Implements a safe multi-turn 'draft-then-send' process for all emails.",
+  "capabilities": {
+    "reasoning": "medium",
+    "tools": ["draft_email", "send_email", "get_email_status", "list_recent_emails"],
+    "hitl": true,
+    "stateful": true
+  },
+  "skills": [
+    {
+      "id": "send_notifications",
+      "name": "send_notifications",
+      "description": "Draft and send email notifications with human approval workflow",
+      "tags": ["email", "notification", "hitl"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "inputModes": ["text/plain"],
+  "outputModes": ["application/json"],
+  "url": "http://localhost:8000/notification/a2a/interact"
+}

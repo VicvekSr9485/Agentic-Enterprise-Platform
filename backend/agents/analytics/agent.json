@@ -1,0 +1,13 @@
+{
+  "name": "analytics_specialist",
+  "description": "Business intelligence and data analysis agent specialized in inventory analytics, trends, forecasting, and performance reporting",
+  "capabilities": [
+    "inventory_trend_analysis",
+    "inventory_value_calculation",
+    "sales_forecasting",
+    "performance_reporting",
+    "category_comparison",
+    "anomaly_detection"
+  ],
+  "version": "1.0.0"
+}

@@ -1,0 +1,121 @@
+from typing import List, Dict, Optional
+from pydantic import BaseModel
+import json
+
+
+class AgentIntent(BaseModel):
+    """Represents an agent that should be invoked"""
+    agent_name: str  # "inventory", "policy", "notification"
+    targeted_prompt: str  # Simplified prompt for this specific agent
+    reason: str  # Why this agent is needed
+
+
+class IntentClassification(BaseModel):
+    """Result of intent classification"""
+    agents_needed: List[AgentIntent]
+    requires_coordination: bool  # True if multiple agents need to coordinate
+    user_intent_summary: str  # Brief summary of what user wants
+
+
+INTENT_CLASSIFICATION_PROMPT = """You are an intent classifier for an enterprise agent orchestration system.
+
+Available agents:
+1. **inventory_specialist** - Queries product inventory database (stock levels, prices, SKUs, product details)
+2. **policy_expert** - Searches company policy documents (returns, HR policies, compliance, regulations)
+3. **analytics_specialist** - Business intelligence and analytics (trends, forecasts, reports, comparisons, anomalies)
+4. **notification_specialist** - Drafts and sends emails with human approval workflow
+
+Analyze the user's request and determine:
+1. Which agent(s) need to be involved
+2. What specific question/task each agent should handle
+3. Whether coordination between agents is needed
+
+Rules:
+- If user asks about inventory/stock/products → use inventory_specialist
+- If user asks about policies/rules/compliance → use policy_expert
+- If user asks about trends/analysis/forecasts/reports/performance → use analytics_specialist
+- If user asks to draft/send/email/notify → use notification_specialist
+- If user asks multiple things (e.g., "analyze trends AND email results") → use multiple agents with coordination
+- Create targeted, specific prompts for each agent (don't pass the full user query if it contains tasks for other agents)
+
+USER REQUEST: {user_prompt}
+
+Respond with a JSON object following this schema:
+{{
+  "agents_needed": [
+    {{
+      "agent_name": "inventory" | "policy" | "analytics" | "notification",
+      "targeted_prompt": "Specific question for this agent",
+      "reason": "Why this agent is needed"
+    }}
+  ],
+  "requires_coordination": true | false,
+  "user_intent_summary": "Brief summary of what user wants"
+}}
+
+Examples:
+
+User: "How many pumps do we have?"
+Response:
+{{
+  "agents_needed": [
+    {{"agent_name": "inventory", "targeted_prompt": "How many pumps are in stock?", "reason": "User needs inventory data"}}
+  ],
+  "requires_coordination": false,
+  "user_intent_summary": "Check pump inventory quantity"
+}}
+
+User: "Check pump inventory and draft an email to sales about it"
+Response:
+{{
+  "agents_needed": [
+    {{"agent_name": "inventory", "targeted_prompt": "What pumps do we have in stock? Include quantities, SKUs, and prices.", "reason": "Need inventory data for email"}},
+    {{"agent_name": "notification", "targeted_prompt": "Draft an email to sales@company.com summarizing the pump inventory data", "reason": "User wants to email the results"}}
+  ],
+  "requires_coordination": true,
+  "user_intent_summary": "Get pump inventory and email summary to sales"
+}}
+
+User: "What's our return policy for electronics and how many valves are in warehouse B?"
+Response:
+{{
+  "agents_needed": [
+    {{"agent_name": "policy", "targeted_prompt": "What is the return policy for electronics?", "reason": "User needs policy information"}},
+    {{"agent_name": "inventory", "targeted_prompt": "How many valves are in warehouse B?", "reason": "User needs inventory data"}}
+  ],
+  "requires_coordination": true,
+  "user_intent_summary": "Get electronics return policy and valve inventory from warehouse B"
+}}
+
+Now classify this request and respond ONLY with valid JSON:"""
+
+
+def parse_intent_from_llm_response(response_text: str) -> Optional[IntentClassification]:
+    """
+    Parse LLM response into IntentClassification object.
+    
+    Args:
+        response_text: Raw text response from LLM
+        
+    Returns:
+        IntentClassification object or None if parsing fails
+    """
+    try:
+        text = response_text.strip()
+        
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        text = text.strip()
+        
+        data = json.loads(text)
+        
+        return IntentClassification(**data)
+    except Exception as e:
+        print(f"[INTENT CLASSIFIER] Failed to parse LLM response: {e}")
+        print(f"[INTENT CLASSIFIER] Raw response: {response_text[:200]}")
+        return None

@@ -1,0 +1,24 @@
+{
+  "name": "inventory_specialist",
+  "version": "1.0.0",
+  "description": "A specialized data agent that has read-only access to the product inventory database. Can check stock levels, prices, and item locations via MCP PostgreSQL connection.",
+  "capabilities": {
+    "reasoning": "medium",
+    "tools": ["query_database", "list_tables", "describe_tables"]
+  },
+  "skills": [
+    {
+      "id": "query_inventory",
+      "name": "query_inventory",
+      "description": "Query product inventory database for stock levels, prices, and availability",
+      "tags": ["database", "inventory", "query"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "inputModes": ["text/plain"],
+  "outputModes": ["application/json"],
+  "url": "http://localhost:8000/inventory/a2a/interact"
+}

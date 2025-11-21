@@ -1,0 +1,13 @@
+{
+  "name": "order_specialist",
+  "description": "Order management and procurement agent specialized in purchase orders, supplier management, order tracking, and reorder recommendations",
+  "capabilities": [
+    "purchase_order_creation",
+    "supplier_catalog_query",
+    "order_status_tracking",
+    "reorder_recommendations",
+    "supplier_compliance_validation",
+    "optimal_order_quantity_calculation"
+  ],
+  "version": "1.0.0"
+}

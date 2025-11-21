@@ -1,0 +1,24 @@
+{
+  "name": "policy_expert",
+  "version": "1.0.0",
+  "description": "An expert on corporate policy. Uses RAG (Retrieval-Augmented Generation) to search internal documents with vector search for rules on returns, HR, compliance, and company policies.",
+  "capabilities": {
+    "reasoning": "high",
+    "tools": ["search_policy_documents", "get_policy_by_id", "list_policy_categories"]
+  },
+  "skills": [
+    {
+      "id": "search_policies",
+      "name": "search_policies",
+      "description": "Semantic search over company policy documents for compliance and regulatory questions",
+      "tags": ["rag", "policy", "search", "compliance"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "inputModes": ["text/plain"],
+  "outputModes": ["application/json"],
+  "url": "http://localhost:8000/policy/a2a/interact"
+}

@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  # Backend - Enterprise Agents Platform API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: enterprise-agents-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      
+      # Google AI
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      
+      # Supabase Configuration
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL}
+      
+      # SMTP Configuration
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL}
+      
+      # Feature Flags
+      - ENABLE_HITL=${ENABLE_HITL:-true}
+      - ENABLE_MEMORY=${ENABLE_MEMORY:-true}
+      - SESSION_PERSISTENCE=${SESSION_PERSISTENCE:-true}
+      
+      # Branding
+      - COMPANY_NAME=${COMPANY_NAME:-Company}
+      - EMAIL_SIGNATURE=${EMAIL_SIGNATURE:-Best regards\nCompany}
+    volumes:
+      # Persistent logs
+      - backend-logs:/app/logs
+    networks:
+      - enterprise-agents-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend - React + Vite Application
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    container_name: enterprise-agents-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - enterprise-agents-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  enterprise-agents-net:
+    driver: bridge
+
+volumes:
+  backend-logs:
