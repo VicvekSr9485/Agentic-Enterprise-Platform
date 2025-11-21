@@ -181,6 +181,8 @@ async def chat_endpoint(request: ChatRequest):
             "policy_expert": f"{base_url}/policy/a2a/interact",
             "analytics": f"{base_url}/analytics/a2a/interact",
             "analytics_specialist": f"{base_url}/analytics/a2a/interact",
+            "orders": f"{base_url}/orders/a2a/interact",
+            "order_specialist": f"{base_url}/orders/a2a/interact",
             "notification": f"{base_url}/notification/a2a/interact",
             "notification_specialist": f"{base_url}/notification/a2a/interact",
         }

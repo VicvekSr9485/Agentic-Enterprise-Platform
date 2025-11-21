@@ -23,7 +23,8 @@ Available agents:
 1. **inventory_specialist** - Queries product inventory database (stock levels, prices, SKUs, product details)
 2. **policy_expert** - Searches company policy documents (returns, HR policies, compliance, regulations)
 3. **analytics_specialist** - Business intelligence and analytics (trends, forecasts, reports, comparisons, anomalies)
-4. **notification_specialist** - Drafts and sends emails with human approval workflow
+4. **order_specialist** - Order management and procurement (purchase orders, suppliers, reorders, tracking)
+5. **notification_specialist** - Drafts and sends emails with human approval workflow
 
 Analyze the user's request and determine:
 1. Which agent(s) need to be involved
@@ -34,6 +35,7 @@ Rules:
 - If user asks about inventory/stock/products → use inventory_specialist
 - If user asks about policies/rules/compliance → use policy_expert
 - If user asks about trends/analysis/forecasts/reports/performance → use analytics_specialist
+- If user asks about orders/purchase/suppliers/reorder/procurement → use order_specialist
 - If user asks to draft/send/email/notify → use notification_specialist
 - If user asks multiple things (e.g., "analyze trends AND email results") → use multiple agents with coordination
 - Create targeted, specific prompts for each agent (don't pass the full user query if it contains tasks for other agents)
@@ -44,7 +46,7 @@ Respond with a JSON object following this schema:
 {{
   "agents_needed": [
     {{
-      "agent_name": "inventory" | "policy" | "analytics" | "notification",
+      "agent_name": "inventory" | "policy" | "analytics" | "orders" | "notification",
       "targeted_prompt": "Specific question for this agent",
       "reason": "Why this agent is needed"
     }}

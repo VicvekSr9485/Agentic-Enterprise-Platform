@@ -51,6 +51,7 @@ def create_orchestrator():
     policy_url = f"{base_url}/policy{AGENT_CARD_WELL_KNOWN_PATH}"
     notification_url = f"{base_url}/notification{AGENT_CARD_WELL_KNOWN_PATH}"
     analytics_url = f"{base_url}/analytics{AGENT_CARD_WELL_KNOWN_PATH}"
+    orders_url = f"{base_url}/orders{AGENT_CARD_WELL_KNOWN_PATH}"
     
     inventory_worker = RemoteA2aAgent(
         name="inventory_specialist",
@@ -97,6 +98,18 @@ def create_orchestrator():
         agent_card=analytics_url
     )
     
+    orders_worker = RemoteA2aAgent(
+        name="order_specialist",
+        description=(
+            "Order management and procurement agent. "
+            "Delegate purchase order creation, supplier catalog queries, "
+            "order tracking, reorder suggestions, supplier compliance validation, "
+            "and optimal order quantity calculations to this agent. "
+            "Handles all procurement and supplier management tasks."
+        ),
+        agent_card=orders_url
+    )
+    
     # System Instructions for Orchestrator
     system_instructions = """
     You are the Enterprise Orchestrator Agent, a Level 3 coordinator responsible for 
@@ -110,6 +123,7 @@ def create_orchestrator():
        - Inventory queries (stock, products, prices) → inventory_specialist
        - Policy questions (returns, compliance, rules) → policy_expert
        - Analytics tasks (trends, forecasts, reports) → analytics_specialist
+       - Order management (POs, suppliers, reorders) → order_specialist
        - Email actions (notifications, communications) → action_taker
     
     3. MULTI-AGENT COORDINATION STRATEGIES:
@@ -191,7 +205,7 @@ def create_orchestrator():
         model="gemini-2.5-flash-lite",
         name="orchestrator",
         instruction=system_instructions,
-        sub_agents=[inventory_worker, policy_worker, analytics_worker, notification_worker],
+        sub_agents=[inventory_worker, policy_worker, analytics_worker, orders_worker, notification_worker],
         tools=[preload_memory_tool.PreloadMemoryTool()],
     )
     

@@ -23,6 +23,7 @@ from agents.inventory.routes import router as inventory_router
 from agents.policy.routes import router as policy_router
 from agents.notification.routes import router as notification_router
 from agents.analytics.routes import router as analytics_router
+from agents.orders.routes import router as orders_router
 
 load_dotenv()
 
@@ -63,7 +64,7 @@ async def lifespan(app: FastAPI):
     
     logger.info(
         "Platform initialized",
-        agents=["orchestrator", "inventory", "policy", "analytics", "notification"],
+        agents=["orchestrator", "inventory", "policy", "analytics", "orders", "notification"],
         architecture="modular_monolith",
         protocol="a2a"
     )
@@ -78,9 +79,10 @@ app = FastAPI(
     title="Enterprise Agents Platform",
     description=(
         "A Level 3 Modular Monolith Agent Swarm built with Google ADK. "
-        "Provides enterprise business workflow automation with five specialized agents: "
-        "Orchestrator (with Memory), Inventory Agent, Policy Agent, Analytics Agent, and Notification Agent "
-        "(with HITL workflow). All agents support session persistence and communicate via A2A Protocol."
+        "Provides enterprise business workflow automation with six specialized agents: "
+        "Orchestrator (with Memory), Inventory Agent, Policy Agent, Analytics Agent, "
+        "Order Management Agent, and Notification Agent (with HITL workflow). "
+        "All agents support session persistence and communicate via A2A Protocol."
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -159,6 +161,12 @@ async def root(request: Request):
                 "model": "gemini-1.5-flash-lite",
                 "capabilities": ["session_persistence", "trend_analysis", "forecasting", "reporting"]
             },
+            "orders": {
+                "status": "active",
+                "role": "worker",
+                "model": "gemini-1.5-flash-lite",
+                "capabilities": ["session_persistence", "purchase_orders", "supplier_management", "procurement"]
+            },
             "notification": {
                 "status": "active",
                 "role": "worker",
@@ -172,6 +180,7 @@ async def root(request: Request):
             "inventory": "/inventory",
             "policy": "/policy",
             "analytics": "/analytics",
+            "orders": "/orders",
             "notification": "/notification",
             "docs": "/docs",
             "health": "/health"
@@ -231,6 +240,12 @@ app.include_router(
     analytics_router,
     prefix="/analytics",
     tags=["Analytics Agent"]
+)
+
+app.include_router(
+    orders_router,
+    prefix="/orders",
+    tags=["Order Management Agent"]
 )
 
 app.include_router(

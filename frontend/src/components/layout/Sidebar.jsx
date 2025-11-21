@@ -4,6 +4,8 @@ const agents = [
   { name: 'Orchestrator', icon: '🧠', status: 'online', description: 'Intelligent routing & coordination' },
   { name: 'Inventory Agent', icon: '📦', status: 'online', description: 'Product data retrieval' },
   { name: 'Policy Agent', icon: '📋', status: 'online', description: 'Policy document search' },
+  { name: 'Analytics Agent', icon: '📊', status: 'online', description: 'Trends, forecasts & reports' },
+  { name: 'Order Agent', icon: '🛒', status: 'online', description: 'Purchase orders & procurement' },
   { name: 'Notification Agent', icon: '✉️', status: 'online', description: 'Email drafting & sending' }
 ];
 
