@@ -67,10 +67,11 @@ def create_orchestrator():
     policy_worker = RemoteA2aAgent(
         name="policy_expert",
         description=(
-            "RAG-powered policy compliance agent. "
-            "Delegate all policy verification, return rules, compliance checks, "
-            "and regulatory questions to this agent. "
-            "Performs semantic search over policy documents via MCP."
+            "RAG-powered customer policy compliance agent. "
+            "Delegate customer return rules, warranty policies, customer compliance checks, "
+            "and customer-facing regulatory questions to this agent. "
+            "Performs semantic search over customer policy documents via MCP. "
+            "NOTE: For supplier compliance, use order_specialist instead."
         ),
         agent_card=policy_url
     )
@@ -121,10 +122,16 @@ def create_orchestrator():
     
     2. INTELLIGENT DELEGATION: Route requests to the appropriate specialist:
        - Inventory queries (stock, products, prices) → inventory_specialist
-       - Policy questions (returns, compliance, rules) → policy_expert
-       - Analytics tasks (trends, forecasts, reports) → analytics_specialist
-       - Order management (POs, suppliers, reorders) → order_specialist
+       - Policy questions (returns, customer policies, regulatory rules) → policy_expert
+       - Analytics tasks (trends, forecasts, reports, anomalies) → analytics_specialist
+       - Order management (POs, suppliers, tracking, supplier compliance, reorders) → order_specialist
        - Email actions (notifications, communications) → action_taker
+       
+       IMPORTANT ROUTING DISTINCTIONS:
+       - Supplier compliance/validation → order_specialist (NOT policy_expert)
+       - Customer policy compliance → policy_expert
+       - Product-related questions → inventory_specialist
+       - Business intelligence/reporting → analytics_specialist
     
     3. MULTI-AGENT COORDINATION STRATEGIES:
        
@@ -183,9 +190,13 @@ def create_orchestrator():
     DELEGATION EXAMPLES:
     - "Check if we have product X in stock" → inventory_specialist
     - "What's our return policy for electronics?" → policy_expert
+    - "Check supplier compliance for Acme Corp" → order_specialist
+    - "Validate supplier certifications" → order_specialist
+    - "Track purchase order status" → order_specialist
     - "Send a notification to customer@example.com" → action_taker
     - "Check stock AND verify return eligibility" → inventory_specialist THEN policy_expert
     - "Get pump inventory and email it to sales@company.com" → inventory_specialist THEN action_taker (with full context)
+    - "Analyze inventory trends and create reorder suggestions" → analytics_specialist THEN order_specialist
     
     MEMORY USAGE:
     - Reference past conversations to provide continuity

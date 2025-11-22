@@ -1,9 +1,14 @@
-import os
-import psycopg2
-from psycopg2 import sql
+import sys
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import json
+import math
+
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from shared.supabase_client import get_supabase_client
 
 
 def create_purchase_order(supplier: str, items: str, delivery_date: str) -> str:
@@ -19,17 +24,12 @@ def create_purchase_order(supplier: str, items: str, delivery_date: str) -> str:
         Formatted purchase order
     """
     try:
-        db_url = os.getenv("SUPABASE_DB_URL")
-        if not db_url:
-            return "Error: SUPABASE_DB_URL environment variable not configured."
-        
         try:
             items_list = json.loads(items)
         except json.JSONDecodeError:
             return "Error: Items must be valid JSON array with format [{'sku': '...', 'quantity': ...}]"
         
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
+        client = get_supabase_client()
         
         po_number = f"PO-{datetime.now().strftime('%Y%m%d')}-{hash(supplier) % 10000:04d}"
         order_items = []
@@ -42,29 +42,26 @@ def create_purchase_order(supplier: str, items: str, delivery_date: str) -> str:
             if not sku or quantity <= 0:
                 continue
             
-            cur.execute("""
-                SELECT name, price, category
-                FROM inventory
-                WHERE LOWER(sku) = LOWER(%s)
-            """, (sku,))
+            results = client.query(
+                "inventory",
+                select="name,price,category",
+                filters={"sku": f"ilike.{sku}"}
+            )
             
-            result = cur.fetchone()
-            if result:
-                name, price, category = result
+            if results:
+                product = results[0]
+                price = float(product['price'])
                 line_total = price * quantity
                 total_amount += line_total
                 
                 order_items.append({
                     "sku": sku,
-                    "name": name,
+                    "name": product['name'],
                     "quantity": quantity,
                     "unit_price": price,
                     "line_total": line_total,
-                    "category": category
+                    "category": product['category']
                 })
-        
-        cur.close()
-        conn.close()
         
         if not order_items:
             return "Error: No valid items found for purchase order. Check SKUs and quantities."
@@ -98,8 +95,6 @@ def create_purchase_order(supplier: str, items: str, delivery_date: str) -> str:
         
         return "\n".join(output)
         
-    except psycopg2.Error as e:
-        return f"Database error: {str(e)}"
     except Exception as e:
         return f"Error creating purchase order: {str(e)}"
 
@@ -116,123 +111,113 @@ def check_supplier_catalog(supplier_name: str, product_type: Optional[str] = Non
         Formatted supplier catalog information
     """
     try:
-        db_url = os.getenv("SUPABASE_DB_URL")
-        if not db_url:
-            return "Error: SUPABASE_DB_URL environment variable not configured."
-        
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
+        client = get_supabase_client()
         
         if product_type:
-            cur.execute("""
-                SELECT name, sku, quantity, price, category, location
-                FROM inventory
-                WHERE LOWER(category) = LOWER(%s)
-                ORDER BY price ASC
-                LIMIT 20
-            """, (product_type,))
+            results = client.query(
+                "inventory",
+                select="name,sku,quantity,price,category,location",
+                filters={"category": f"ilike.{product_type}"},
+                order="price.asc",
+                limit=20
+            )
         else:
-            cur.execute("""
-                SELECT name, sku, quantity, price, category, location
-                FROM inventory
-                ORDER BY category, price ASC
-                LIMIT 20
-            """)
-        
-        results = cur.fetchall()
-        cur.close()
-        conn.close()
+            results = client.query(
+                "inventory",
+                select="name,sku,quantity,price,category,location",
+                order="category.asc,price.asc",
+                limit=20
+            )
         
         if not results:
             return f"No products found{f' in category {product_type}' if product_type else ''} for supplier {supplier_name}."
         
         categories = {}
-        for name, sku, qty, price, cat, loc in results:
+        for item in results:
+            cat = item['category']
             if cat not in categories:
                 categories[cat] = []
-            categories[cat].append({
-                "name": name,
-                "sku": sku,
-                "current_stock": qty,
-                "unit_price": price,
-                "location": loc
-            })
+            categories[cat].append(item)
         
         output = []
         output.append(f"SUPPLIER CATALOG: {supplier_name}")
         output.append(f"{'=' * 70}")
-        output.append(f"Query: {product_type if product_type else 'All Categories'}")
-        output.append(f"Results: {len(results)} product(s)")
+        if product_type:
+            output.append(f"Product Category: {product_type}")
+        output.append(f"Total Items: {len(results)}")
         output.append("")
         
-        for category, products in sorted(categories.items()):
-            output.append(f"{category.upper()}:")
-            for prod in products:
-                output.append(f"  - {prod['name']} (SKU: {prod['sku']})")
-                output.append(f"    Price: ${prod['unit_price']:.2f} | Current Stock: {prod['current_stock']} units")
-                output.append(f"    Location: {prod['location']}")
+        for category, items in sorted(categories.items()):
+            output.append(f"Category: {category}")
+            output.append(f"{'-' * 70}")
+            for item in items:
+                output.append(f"  {item['name']} (SKU: {item['sku']})")
+                output.append(f"    Price: ${float(item['price']):.2f} | Stock: {item['quantity']} units | Location: {item['location']}")
             output.append("")
-        
-        output.append("Ordering Information:")
-        output.append(f"  - Minimum Order Quantity (MOQ): 10 units per item")
-        output.append(f"  - Lead Time: 5-7 business days")
-        output.append(f"  - Payment Terms: Net 30")
-        output.append(f"  - Free shipping on orders over $500")
         
         return "\n".join(output)
         
-    except psycopg2.Error as e:
-        return f"Database error: {str(e)}"
     except Exception as e:
-        return f"Error querying supplier catalog: {str(e)}"
+        return f"Error checking supplier catalog: {str(e)}"
 
 
 def track_order_status(po_number: str) -> str:
     """
-    Track order status and estimated delivery.
+    Track purchase order status and delivery information.
     
     Args:
         po_number: Purchase order number to track
         
     Returns:
-        Formatted order status information
+        Formatted order tracking information
     """
     try:
-        statuses = ["DRAFT", "SUBMITTED", "CONFIRMED", "IN_TRANSIT", "DELIVERED", "CANCELLED"]
+        client = get_supabase_client()
         
-        po_prefix = po_number.split("-")[0] if "-" in po_number else ""
+        # Query purchase order with supplier information
+        po_results = client.query(
+            "purchase_orders",
+            select="*",
+            filters={"po_number": f"eq.{po_number}"}
+        )
         
-        if po_prefix != "PO":
-            return f"Invalid purchase order number format. Expected format: PO-YYYYMMDD-XXXX"
+        if not po_results:
+            return f"Purchase order '{po_number}' not found in the system."
         
-        simulated_status = "IN_TRANSIT"
-        estimated_delivery = (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d')
+        po = po_results[0]
+        
+        # Get supplier details
+        supplier_results = client.query(
+            "suppliers",
+            select="name,contact_email,contact_phone",
+            filters={"supplier_id": f"eq.{po['supplier_id']}"}
+        )
+        
+        supplier_name = supplier_results[0]['name'] if supplier_results else "Unknown Supplier"
         
         output = []
         output.append(f"ORDER TRACKING: {po_number}")
         output.append(f"{'=' * 70}")
-        output.append(f"Status: {simulated_status}")
-        output.append(f"Estimated Delivery: {estimated_delivery}")
-        output.append("")
+        output.append(f"Status: {po['status'].upper()}")
+        output.append(f"Supplier: {supplier_name}")
+        output.append(f"Order Date: {po['order_date']}")
+        output.append(f"Expected Delivery: {po['delivery_date']}")
         
-        output.append("Tracking Timeline:")
-        output.append(f"  ✓ Order Submitted: {(datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d %H:%M')}")
-        output.append(f"  ✓ Order Confirmed: {(datetime.now() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M')}")
-        output.append(f"  ✓ Shipped: {(datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d %H:%M')}")
-        output.append(f"  → In Transit: Current")
-        output.append(f"  ○ Delivery: {estimated_delivery} (estimated)")
-        output.append("")
+        if po.get('tracking_number'):
+            output.append(f"Tracking Number: {po['tracking_number']}")
         
-        output.append("Shipment Details:")
-        output.append(f"  Carrier: FedEx Ground")
-        output.append(f"  Tracking Number: 1Z999AA10123456784")
-        output.append(f"  Current Location: Distribution Center - Regional Hub")
-        output.append(f"  Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         output.append("")
+        output.append("Order Items:")
+        items = po['items'] if isinstance(po['items'], list) else []
+        for item in items:
+            output.append(f"  - {item.get('name', 'N/A')} (SKU: {item.get('sku', 'N/A')})")
+            output.append(f"    Quantity: {item.get('quantity', 0)} @ ${item.get('unit_price', 0):.2f}")
         
-        output.append("Contact Information:")
-        output.append(f"  For questions: orders@supplier.com")
-        output.append(f"  Phone: 1-800-555-0199")
+        output.append("")
+        output.append(f"Order Total: ${float(po['total_amount']):.2f}")
+        
+        if po.get('notes'):
+            output.append(f"\nNotes: {po['notes']}")
         
         return "\n".join(output)
         
@@ -242,147 +227,155 @@ def track_order_status(po_number: str) -> str:
 
 def get_reorder_suggestions(threshold: int = 10) -> str:
     """
-    Auto-recommend products to reorder based on low stock.
+    Generate reorder recommendations based on stock levels.
     
     Args:
-        threshold: Stock level threshold for reorder recommendation
+        threshold: Stock level threshold to trigger reorder suggestion
         
     Returns:
-        Formatted reorder suggestions
+        Formatted reorder recommendations
     """
     try:
-        db_url = os.getenv("SUPABASE_DB_URL")
-        if not db_url:
-            return "Error: SUPABASE_DB_URL environment variable not configured."
+        client = get_supabase_client()
         
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        
-        cur.execute("""
-            SELECT name, sku, quantity, price, category, location
-            FROM inventory
-            WHERE quantity <= %s
-            ORDER BY quantity ASC, category
-        """, (threshold,))
-        
-        results = cur.fetchall()
-        cur.close()
-        conn.close()
+        results = client.query(
+            "inventory",
+            select="name,sku,quantity,price,category",
+            filters={"quantity": f"lt.{threshold}"},
+            order="quantity.asc"
+        )
         
         if not results:
-            return f"No products below threshold of {threshold} units. Stock levels are healthy."
+            return f"No products below reorder threshold of {threshold} units. All stock levels are adequate."
+        
+        categories = {}
+        total_reorder_cost = 0
+        
+        for item in results:
+            cat = item['category']
+            if cat not in categories:
+                categories[cat] = []
+            
+            # Calculate suggested order quantity (2x threshold)
+            suggested_qty = threshold * 2
+            reorder_cost = suggested_qty * float(item['price'])
+            total_reorder_cost += reorder_cost
+            
+            categories[cat].append({
+                **item,
+                "suggested_qty": suggested_qty,
+                "reorder_cost": reorder_cost
+            })
         
         output = []
         output.append(f"REORDER RECOMMENDATIONS")
-        output.append(f"Threshold: {threshold} units")
         output.append(f"{'=' * 70}")
-        output.append(f"Found {len(results)} product(s) requiring reorder")
+        output.append(f"Threshold: {threshold} units")
+        output.append(f"Total Products Needing Reorder: {len(results)}")
+        output.append(f"Estimated Total Cost: ${total_reorder_cost:,.2f}")
         output.append("")
         
-        total_reorder_cost = 0
-        
-        by_priority = {
-            "CRITICAL (0-2 units)": [],
-            "HIGH (3-5 units)": [],
-            "MEDIUM (6-10 units)": []
-        }
-        
-        for name, sku, qty, price, cat, loc in results:
-            if qty <= 2:
-                priority = "CRITICAL (0-2 units)"
-            elif qty <= 5:
-                priority = "HIGH (3-5 units)"
-            else:
-                priority = "MEDIUM (6-10 units)"
-            
-            recommended_qty = max(30, threshold * 3)
-            reorder_cost = recommended_qty * price
-            total_reorder_cost += reorder_cost
-            
-            by_priority[priority].append({
-                "name": name,
-                "sku": sku,
-                "current": qty,
-                "recommended": recommended_qty,
-                "price": price,
-                "cost": reorder_cost,
-                "category": cat
-            })
-        
-        for priority, items in by_priority.items():
-            if items:
-                output.append(f"{priority}:")
-                for item in items:
-                    output.append(f"  - {item['name']} (SKU: {item['sku']})")
-                    output.append(f"    Current Stock: {item['current']} units | Recommended: {item['recommended']} units")
-                    output.append(f"    Unit Price: ${item['price']:.2f} | Total Cost: ${item['cost']:,.2f}")
-                    output.append(f"    Category: {item['category']}")
-                output.append("")
-        
-        output.append("Summary:")
-        output.append(f"  Total Products to Reorder: {len(results)}")
-        output.append(f"  Estimated Total Cost: ${total_reorder_cost:,.2f}")
-        output.append("")
-        output.append("Recommended Actions:")
-        output.append(f"  1. Create purchase orders for CRITICAL items immediately")
-        output.append(f"  2. Review HIGH priority items within 2-3 days")
-        output.append(f"  3. Monitor MEDIUM priority items for next week")
+        for category, items in sorted(categories.items()):
+            output.append(f"Category: {category} ({len(items)} items)")
+            output.append(f"{'-' * 70}")
+            for item in items:
+                output.append(f"  {item['name']} (SKU: {item['sku']})")
+                output.append(f"    Current Stock: {item['quantity']} units")
+                output.append(f"    Suggested Order: {item['suggested_qty']} units")
+                output.append(f"    Unit Price: ${float(item['price']):.2f}")
+                output.append(f"    Reorder Cost: ${item['reorder_cost']:,.2f}")
+            output.append("")
         
         return "\n".join(output)
         
-    except psycopg2.Error as e:
-        return f"Database error: {str(e)}"
     except Exception as e:
         return f"Error generating reorder suggestions: {str(e)}"
 
 
 def validate_supplier_compliance(supplier_id: str) -> str:
     """
-    Check if vendor meets policy requirements.
+    Check supplier compliance status and certifications.
     
     Args:
-        supplier_id: Supplier identifier
+        supplier_id: Supplier ID or name to validate
         
     Returns:
-        Formatted compliance status
+        Formatted compliance report
     """
     try:
-        compliance_checks = {
-            "ISO 9001 Certification": True,
-            "Payment Terms Net 30": True,
-            "Minimum Order Value $100": True,
-            "Lead Time 5-7 Days": True,
-            "Return Policy 30 Days": True,
-            "Quality Assurance Program": True,
-            "Insurance Coverage": True,
-            "Background Check Completed": True
-        }
+        client = get_supabase_client()
+        
+        # Try to find supplier by ID or name
+        filters = {}
+        if supplier_id.startswith('SUP-'):
+            filters = {"supplier_id": f"eq.{supplier_id}"}
+        else:
+            filters = {"name": f"ilike.*{supplier_id}*"}
+        
+        supplier_results = client.query(
+            "suppliers",
+            select="*",
+            filters=filters
+        )
+        
+        if not supplier_results:
+            return f"Supplier '{supplier_id}' not found in the system."
+        
+        supplier = supplier_results[0]
         
         output = []
-        output.append(f"SUPPLIER COMPLIANCE REPORT")
-        output.append(f"Supplier ID: {supplier_id}")
+        output.append(f"SUPPLIER COMPLIANCE VALIDATION: {supplier['name']}")
         output.append(f"{'=' * 70}")
-        output.append(f"Evaluation Date: {datetime.now().strftime('%Y-%m-%d')}")
-        output.append(f"Status: APPROVED")
+        output.append(f"Supplier ID: {supplier['supplier_id']}")
+        output.append(f"Compliance Status: {supplier['compliance_status'].upper()}")
+        output.append(f"Rating: {float(supplier['rating']):.1f}/5.0")
         output.append("")
         
-        output.append("Compliance Checklist:")
-        for check, status in compliance_checks.items():
-            symbol = "✓" if status else "✗"
-            output.append(f"  {symbol} {check}")
+        # Last audit information
+        if supplier.get('last_audit_date'):
+            output.append(f"Last Audit: {supplier['last_audit_date']}")
+            from datetime import datetime, date
+            try:
+                audit_date = datetime.strptime(supplier['last_audit_date'], '%Y-%m-%d').date()
+                days_since = (date.today() - audit_date).days
+                output.append(f"Days Since Audit: {days_since}")
+                
+                if days_since > 365:
+                    output.append("⚠️  WARNING: Audit is overdue (>365 days)")
+                elif days_since > 180:
+                    output.append("ℹ️  NOTE: Audit should be scheduled soon (>180 days)")
+            except:
+                pass
+        else:
+            output.append("Last Audit: No audit on record")
+            output.append("⚠️  WARNING: No compliance audit found")
         
         output.append("")
-        output.append("Risk Assessment:")
-        output.append(f"  Overall Risk Level: LOW")
-        output.append(f"  Financial Stability: STRONG")
-        output.append(f"  Delivery Performance: 98.5% on-time")
-        output.append(f"  Quality Rating: 4.8/5.0")
-        output.append("")
         
-        output.append("Recommendations:")
-        output.append(f"  - Supplier meets all compliance requirements")
-        output.append(f"  - Approved for procurement up to $50,000 per order")
-        output.append(f"  - Next review date: {(datetime.now() + timedelta(days=365)).strftime('%Y-%m-%d')}")
+        # Certifications
+        certifications = supplier.get('certifications', [])
+        if certifications and isinstance(certifications, list) and len(certifications) > 0:
+            output.append("Certifications:")
+            for cert in certifications:
+                output.append(f"  ✓ {cert}")
+        else:
+            output.append("Certifications: None on record")
+            output.append("⚠️  WARNING: No certifications found")
+        
+        output.append("")
+        output.append("Contact Information:")
+        output.append(f"  Email: {supplier.get('contact_email', 'N/A')}")
+        output.append(f"  Phone: {supplier.get('contact_phone', 'N/A')}")
+        output.append(f"  Address: {supplier.get('address', 'N/A')}")
+        
+        # Compliance recommendation
+        output.append("")
+        if supplier['compliance_status'] == 'active' and supplier['rating'] >= 4.0:
+            output.append("✓ RECOMMENDATION: Supplier meets compliance requirements")
+        elif supplier['compliance_status'] == 'under_review':
+            output.append("⚠️  RECOMMENDATION: Supplier under review - use caution for new orders")
+        else:
+            output.append("❌ RECOMMENDATION: Compliance issues detected - review required")
         
         return "\n".join(output)
         
@@ -392,97 +385,84 @@ def validate_supplier_compliance(supplier_id: str) -> str:
 
 def calculate_optimal_order_quantity(sku: str) -> str:
     """
-    Economic Order Quantity (EOQ) analysis for cost efficiency.
+    Calculate Economic Order Quantity (EOQ) for optimal purchasing.
     
     Args:
-        sku: Product SKU to analyze
+        sku: Product SKU to calculate EOQ for
         
     Returns:
-        Formatted EOQ analysis
+        Formatted EOQ calculation
     """
     try:
-        db_url = os.getenv("SUPABASE_DB_URL")
-        if not db_url:
-            return "Error: SUPABASE_DB_URL environment variable not configured."
+        client = get_supabase_client()
         
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
+        results = client.query(
+            "inventory",
+            select="name,sku,quantity,price,category",
+            filters={"sku": f"ilike.{sku}"}
+        )
         
-        cur.execute("""
-            SELECT name, sku, quantity, price, category
-            FROM inventory
-            WHERE LOWER(sku) = LOWER(%s)
-        """, (sku,))
-        
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-        
-        if not result:
+        if not results:
             return f"Product with SKU '{sku}' not found."
         
-        name, sku, current_qty, price, category = result
+        item = results[0]
+        current_stock = item['quantity']
+        unit_cost = float(item['price'])
         
-        annual_demand = max(100, current_qty * 12)
-        ordering_cost = 50.0
-        holding_cost_rate = 0.25
-        holding_cost_per_unit = price * holding_cost_rate
+        # EOQ formula: sqrt((2 * annual_demand * order_cost) / holding_cost_per_unit)
+        # Assumptions for calculation:
+        estimated_annual_demand = max(current_stock * 12, 100)  # Estimate based on current stock
+        order_cost = 50  # Fixed cost per order
+        holding_cost_rate = 0.25  # 25% of unit cost per year
+        holding_cost_per_unit = unit_cost * holding_cost_rate
         
         if holding_cost_per_unit > 0:
-            eoq = ((2 * annual_demand * ordering_cost) / holding_cost_per_unit) ** 0.5
+            eoq = math.sqrt((2 * estimated_annual_demand * order_cost) / holding_cost_per_unit)
+            eoq = int(eoq)
         else:
-            eoq = 50
+            eoq = estimated_annual_demand // 12  # Fallback: monthly demand
         
-        eoq = int(eoq)
-        
-        number_of_orders = annual_demand / eoq if eoq > 0 else 0
-        total_ordering_cost = number_of_orders * ordering_cost
-        average_inventory = eoq / 2
-        total_holding_cost = average_inventory * holding_cost_per_unit
+        orders_per_year = estimated_annual_demand / eoq if eoq > 0 else 12
+        total_ordering_cost = orders_per_year * order_cost
+        avg_inventory = eoq / 2
+        total_holding_cost = avg_inventory * holding_cost_per_unit
         total_cost = total_ordering_cost + total_holding_cost
         
         output = []
-        output.append(f"ECONOMIC ORDER QUANTITY ANALYSIS")
-        output.append(f"Product: {name} (SKU: {sku})")
+        output.append(f"ECONOMIC ORDER QUANTITY (EOQ) ANALYSIS")
         output.append(f"{'=' * 70}")
+        output.append(f"Product: {item['name']} (SKU: {item['sku']})")
+        output.append(f"Category: {item['category']}")
         output.append("")
-        
         output.append("Current Situation:")
-        output.append(f"  Current Stock: {current_qty} units")
-        output.append(f"  Unit Price: ${price:.2f}")
-        output.append(f"  Category: {category}")
+        output.append(f"  Current Stock: {current_stock} units")
+        output.append(f"  Unit Cost: ${unit_cost:.2f}")
         output.append("")
-        
-        output.append("EOQ Analysis Parameters:")
-        output.append(f"  Annual Demand (estimated): {annual_demand:,} units")
-        output.append(f"  Ordering Cost per Order: ${ordering_cost:.2f}")
-        output.append(f"  Holding Cost Rate: {holding_cost_rate * 100:.0f}%")
-        output.append(f"  Holding Cost per Unit: ${holding_cost_per_unit:.2f}")
+        output.append("Assumptions:")
+        output.append(f"  Estimated Annual Demand: {estimated_annual_demand:,.0f} units")
+        output.append(f"  Order Cost: ${order_cost:.2f} per order")
+        output.append(f"  Holding Cost Rate: {holding_cost_rate*100:.0f}% per year")
+        output.append(f"  Holding Cost per Unit: ${holding_cost_per_unit:.2f}/year")
         output.append("")
-        
         output.append("Optimal Order Strategy:")
-        output.append(f"  Economic Order Quantity (EOQ): {eoq} units")
-        output.append(f"  Number of Orders per Year: {number_of_orders:.1f}")
-        output.append(f"  Days Between Orders: {365 / number_of_orders:.0f} days")
-        output.append(f"  Reorder Point: {int(annual_demand * 7 / 365)} units (7-day buffer)")
+        output.append(f"  Economic Order Quantity: {eoq} units")
+        output.append(f"  Orders per Year: {orders_per_year:.1f}")
+        output.append(f"  Days Between Orders: {365/orders_per_year:.0f} days")
         output.append("")
-        
         output.append("Cost Analysis:")
-        output.append(f"  Total Ordering Cost: ${total_ordering_cost:,.2f}/year")
-        output.append(f"  Total Holding Cost: ${total_holding_cost:,.2f}/year")
-        output.append(f"  Total Inventory Cost: ${total_cost:,.2f}/year")
-        output.append(f"  Cost per Unit Sold: ${total_cost / annual_demand:.2f}")
+        output.append(f"  Total Ordering Cost: ${total_ordering_cost:.2f}/year")
+        output.append(f"  Total Holding Cost: ${total_holding_cost:.2f}/year")
+        output.append(f"  Total Inventory Cost: ${total_cost:.2f}/year")
         output.append("")
-        
-        output.append("Recommendations:")
-        output.append(f"  - Order {eoq} units per purchase order")
-        output.append(f"  - Place orders every {int(365 / number_of_orders)} days")
-        output.append(f"  - Reorder when stock drops below {int(annual_demand * 7 / 365)} units")
-        output.append(f"  - This minimizes total inventory costs")
+        output.append("Recommendation:")
+        if current_stock < eoq / 2:
+            output.append(f" Current stock is below optimal level. Order {eoq} units.")
+        elif current_stock > eoq * 2:
+            output.append(f"  Current stock is above optimal level. Consider reducing next order.")
+        else:
+            output.append(f"  ✓ Stock level is within optimal range. Next order: {eoq} units.")
         
         return "\n".join(output)
         
-    except psycopg2.Error as e:
-        return f"Database error: {str(e)}"
     except Exception as e:
-        return f"Error calculating optimal order quantity: {str(e)}"
+        return f"Error calculating EOQ: {str(e)}"

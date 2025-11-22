@@ -6,10 +6,10 @@ from dotenv import load_dotenv
 from .analytics_tools import (
     get_inventory_trends,
     calculate_inventory_value,
-    get_sales_forecast,
+    generate_sales_forecast,
     generate_performance_report,
     compare_categories,
-    detect_anomalies
+    detect_inventory_anomalies
 )
 
 load_dotenv()
@@ -47,7 +47,7 @@ def create_analytics_agent():
       * Call when user asks about "value", "worth", "valuation"
       * Provide category filter if user specifies one
     
-    - get_sales_forecast(product_sku, horizon_days): Use for demand prediction
+    - generate_sales_forecast(product_sku, horizon_days): Use for demand prediction
       * Call when user asks about "forecast", "predict", "future demand"
       * Require specific SKU from user if not provided
     
@@ -59,7 +59,7 @@ def create_analytics_agent():
       * Call when user asks to "compare" categories
       * Require both category names
     
-    - detect_anomalies(metric): Use for outlier detection
+    - detect_inventory_anomalies(metric): Use for outlier detection
       * Call when user asks about "anomalies", "unusual", "outliers"
       * metric: stock_levels, pricing, distribution
     
@@ -86,23 +86,20 @@ def create_analytics_agent():
     tools = [
         get_inventory_trends,
         calculate_inventory_value,
-        get_sales_forecast,
+        generate_sales_forecast,
         generate_performance_report,
         compare_categories,
-        detect_anomalies
+        detect_inventory_anomalies
     ]
     
     if not os.getenv("SUPABASE_DB_URL"):
         raise ValueError("SUPABASE_DB_URL environment variable not set. Analytics agent requires database access.")
     
     agent = LlmAgent(
+        model="gemini-2.5-flash-lite",
         name="analytics_specialist",
-        description="Business intelligence specialist for inventory analytics and performance reporting",
-        model_name="gemini-2.5-flash-lite",
-        system_instruction=system_instructions,
-        tools=tools,
-        session_service=analytics_session_service,
-        enable_observability=True
+        instruction=system_instructions,
+        tools=tools
     )
     
     return agent

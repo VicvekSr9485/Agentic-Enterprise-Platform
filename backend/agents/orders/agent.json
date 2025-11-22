@@ -1,13 +1,71 @@
 {
   "name": "order_specialist",
-  "description": "Order management and procurement agent specialized in purchase orders, supplier management, order tracking, and reorder recommendations",
-  "capabilities": [
-    "purchase_order_creation",
-    "supplier_catalog_query",
-    "order_status_tracking",
-    "reorder_recommendations",
-    "supplier_compliance_validation",
-    "optimal_order_quantity_calculation"
+  "version": "1.0.0",
+  "description": "Order management and procurement agent specialized in purchase orders, supplier management, order tracking, and reorder recommendations. Handles end-to-end procurement workflows.",
+  "capabilities": {
+    "reasoning": "high",
+    "tools": [
+      "create_purchase_order",
+      "check_supplier_catalog",
+      "track_order_status",
+      "get_reorder_suggestions",
+      "validate_supplier_compliance",
+      "calculate_optimal_order_quantity"
+    ]
+  },
+  "skills": [
+    {
+      "id": "purchase_order_creation",
+      "name": "create_purchase_order",
+      "description": "Create purchase orders with supplier and item details, calculate totals and generate PO numbers",
+      "tags": ["orders", "procurement", "po"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "supplier_catalog_query",
+      "name": "check_supplier_catalog",
+      "description": "Query supplier catalogs for product availability, pricing, and current stock levels",
+      "tags": ["orders", "suppliers", "catalog"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "order_status_tracking",
+      "name": "track_order_status",
+      "description": "Track purchase order status, delivery information, and shipping details",
+      "tags": ["orders", "tracking", "status"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "reorder_recommendations",
+      "name": "get_reorder_suggestions",
+      "description": "Generate intelligent reorder recommendations based on stock levels and thresholds",
+      "tags": ["orders", "reorder", "suggestions"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "supplier_compliance_validation",
+      "name": "validate_supplier_compliance",
+      "description": "Validate supplier compliance status, certifications, audit dates, and ratings",
+      "tags": ["orders", "compliance", "suppliers"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "optimal_order_quantity_calculation",
+      "name": "calculate_optimal_order_quantity",
+      "description": "Calculate Economic Order Quantity (EOQ) for cost-optimized purchasing decisions",
+      "tags": ["orders", "eoq", "optimization"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    }
   ],
-  "version": "1.0.0"
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "inputModes": ["text/plain"],
+  "outputModes": ["application/json"],
+  "url": "http://localhost:8000/orders/a2a/interact"
 }

@@ -1,13 +1,71 @@
 {
   "name": "analytics_specialist",
-  "description": "Business intelligence and data analysis agent specialized in inventory analytics, trends, forecasting, and performance reporting",
-  "capabilities": [
-    "inventory_trend_analysis",
-    "inventory_value_calculation",
-    "sales_forecasting",
-    "performance_reporting",
-    "category_comparison",
-    "anomaly_detection"
+  "version": "1.0.0",
+  "description": "Business intelligence and data analysis agent specialized in inventory analytics, trends, forecasting, and performance reporting. Provides actionable insights through statistical analysis and predictive modeling.",
+  "capabilities": {
+    "reasoning": "high",
+    "tools": [
+      "get_inventory_trends",
+      "calculate_inventory_value",
+      "generate_sales_forecast",
+      "generate_performance_report",
+      "compare_categories",
+      "detect_inventory_anomalies"
+    ]
+  },
+  "skills": [
+    {
+      "id": "inventory_trend_analysis",
+      "name": "get_inventory_trends",
+      "description": "Analyze inventory turnover trends and identify fast/slow moving products based on historical data",
+      "tags": ["analytics", "trends", "business-intelligence"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "inventory_value_calculation",
+      "name": "calculate_inventory_value",
+      "description": "Calculate total inventory value with category-level breakdowns and top items by value",
+      "tags": ["analytics", "valuation", "financial"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sales_forecasting",
+      "name": "generate_sales_forecast",
+      "description": "Generate sales forecasts and reorder point recommendations using EOQ models",
+      "tags": ["analytics", "forecasting", "prediction"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "performance_reporting",
+      "name": "generate_performance_report",
+      "description": "Generate comprehensive performance reports with KPIs including fill rate, stockout count, and turnover metrics",
+      "tags": ["analytics", "reporting", "kpi"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "category_comparison",
+      "name": "compare_categories",
+      "description": "Compare metrics between product categories including value, turnover, and stock levels",
+      "tags": ["analytics", "comparison", "categories"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "anomaly_detection",
+      "name": "detect_inventory_anomalies",
+      "description": "Detect statistical anomalies in inventory data using standard deviation analysis",
+      "tags": ["analytics", "anomaly", "data-quality"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json"]
+    }
   ],
-  "version": "1.0.0"
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "inputModes": ["text/plain"],
+  "outputModes": ["application/json"],
+  "url": "http://localhost:8000/analytics/a2a/interact"
 }
