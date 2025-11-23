@@ -27,9 +27,20 @@ load_dotenv()
 orchestrator_memory = InMemoryMemoryService()
 
 # Initialize Session Service for orchestrator (Persistence)
-orchestrator_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./orchestrator_sessions.db")
-)
+# Support both Supabase (persistent) and SQLite (ephemeral) storage
+use_supabase_sessions = os.getenv("USE_SUPABASE_SESSIONS", "false").lower() == "true"
+
+if use_supabase_sessions:
+    from shared.supabase_session_service import get_supabase_session_service
+    orchestrator_session_service = get_supabase_session_service(
+        table_prefix=os.getenv("SESSION_TABLE_PREFIX", "adk")
+    )
+    print("[SESSION] Using Supabase session storage (persistent across deployments)")
+else:
+    orchestrator_session_service = DatabaseSessionService(
+        db_url=os.getenv("SESSION_DB_URL", "sqlite:///./orchestrator_sessions.db")
+    )
+    print("[SESSION] Using SQLite session storage (ephemeral - lost on restart)")
 
 # Callback to automatically save sessions to memory after each agent turn
 async def auto_save_to_memory(callback_context):
