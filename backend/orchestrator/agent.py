@@ -31,6 +31,23 @@ orchestrator_session_service = DatabaseSessionService(
     db_url=os.getenv("SESSION_DB_URL", "sqlite:///./orchestrator_sessions.db")
 )
 
+# Callback to automatically save sessions to memory after each agent turn
+async def auto_save_to_memory(callback_context):
+    """
+    After each agent turn, save the current session to long-term memory.
+    This ensures conversation history is preserved in the memory service
+    and can be retrieved with preload_memory tool in future sessions.
+    """
+    try:
+        session = callback_context._invocation_context.session
+        memory_service = callback_context._invocation_context.memory_service
+        
+        if session and memory_service:
+            await memory_service.add_session_to_memory(session)
+            print(f"[MEMORY] Saved session {session.id} to memory")
+    except Exception as e:
+        print(f"[MEMORY] Error saving session to memory: {e}")
+
 def create_orchestrator():
     """
     Creates the orchestrator agent with memory capabilities and A2A sub-agents.
@@ -90,11 +107,12 @@ def create_orchestrator():
     analytics_worker = RemoteA2aAgent(
         name="analytics_specialist",
         description=(
-            "Business intelligence and data analysis agent. "
+            "Business intelligence and data analysis agent with price filtering capabilities. "
             "Delegate analytics tasks like trend analysis, inventory valuation, "
             "sales forecasting, performance reporting, category comparisons, "
-            "and anomaly detection to this agent. "
-            "Provides actionable insights from inventory data."
+            "anomaly detection, and PRICE-BASED FILTERING to this agent. "
+            "Use this agent for queries like 'products under $50', 'items over $100', "
+            "'products between $X and $Y'. Provides actionable insights from inventory data."
         ),
         agent_card=analytics_url
     )
@@ -121,17 +139,21 @@ def create_orchestrator():
        Use the preload_memory tool to retrieve relevant past interactions.
     
     2. INTELLIGENT DELEGATION: Route requests to the appropriate specialist:
-       - Inventory queries (stock, products, prices) → inventory_specialist
+       - Inventory queries (stock, products by name/SKU/category) → inventory_specialist
+       - Price-based filtering ("under $X", "over $Y", "between $A-$B") → analytics_specialist
        - Policy questions (returns, customer policies, regulatory rules) → policy_expert
-       - Analytics tasks (trends, forecasts, reports, anomalies) → analytics_specialist
+       - Analytics tasks (trends, forecasts, reports, anomalies, price filtering) → analytics_specialist
        - Order management (POs, suppliers, tracking, supplier compliance, reorders) → order_specialist
        - Email actions (notifications, communications) → action_taker
        
-       IMPORTANT ROUTING DISTINCTIONS:
+       CRITICAL ROUTING RULES:
+       - "Products under $50" → analytics_specialist (NOT inventory_specialist)
+       - "Items over $100" → analytics_specialist (NOT inventory_specialist)
+       - "Products between $20-$80" → analytics_specialist (NOT inventory_specialist)
+       - "Show me pumps" → inventory_specialist (name/category search)
+       - "Check stock levels" → inventory_specialist (stock query)
        - Supplier compliance/validation → order_specialist (NOT policy_expert)
        - Customer policy compliance → policy_expert
-       - Product-related questions → inventory_specialist
-       - Business intelligence/reporting → analytics_specialist
     
     3. MULTI-AGENT COORDINATION STRATEGIES:
        
@@ -189,6 +211,9 @@ def create_orchestrator():
     
     DELEGATION EXAMPLES:
     - "Check if we have product X in stock" → inventory_specialist
+    - "Show me products under $50" → analytics_specialist (price filtering)
+    - "Find items over $100" → analytics_specialist (price filtering)
+    - "Products between $20 and $80" → analytics_specialist (price filtering)
     - "What's our return policy for electronics?" → policy_expert
     - "Check supplier compliance for Acme Corp" → order_specialist
     - "Validate supplier certifications" → order_specialist
@@ -197,6 +222,7 @@ def create_orchestrator():
     - "Check stock AND verify return eligibility" → inventory_specialist THEN policy_expert
     - "Get pump inventory and email it to sales@company.com" → inventory_specialist THEN action_taker (with full context)
     - "Analyze inventory trends and create reorder suggestions" → analytics_specialist THEN order_specialist
+    - "Products under $50 and send notification" → analytics_specialist THEN action_taker (with full product details)
     
     MEMORY USAGE:
     - Reference past conversations to provide continuity
@@ -218,6 +244,7 @@ def create_orchestrator():
         instruction=system_instructions,
         sub_agents=[inventory_worker, policy_worker, analytics_worker, orders_worker, notification_worker],
         tools=[preload_memory_tool.PreloadMemoryTool()],
+        after_agent_callback=auto_save_to_memory,
     )
     
     return agent

@@ -6,6 +6,7 @@ import asyncio
 import httpx
 from pydantic import BaseModel
 from google.adk.runners import Runner
+from google.adk.events import Event
 from google.genai import types
 import google.generativeai as genai
 from orchestrator.agent import create_orchestrator, get_memory_service, get_session_service
@@ -147,22 +148,12 @@ async def chat_endpoint(request: ChatRequest):
                 user_id="default_user",
                 session_id=request.session_id
             )
+            if session is None:
+                raise ValueError("Session returned None")
             print(f"Found existing session: {request.session_id}")
             print(f"  Session details: app={session.app_name}, user={session.user_id}, id={session.id}")
-            
-            if hasattr(memory_service, 'get_memory'):
-                try:
-                    memories = await memory_service.get_memory(
-                        app_name="agents",
-                        user_id="default_user",
-                        session_id=request.session_id
-                    )
-                    if memories:
-                        print(f"  Found {len(memories)} memory entries for context")
-                except Exception as mem_err:
-                    print(f"  Memory retrieval skipped: {mem_err}")
         except Exception as e:
-            print(f"Session not found, creating: {request.session_id} (error: {e})")
+            print(f"Session not found or invalid, creating: {request.session_id}")
             session = await session_service.create_session(
                 app_name="agents",
                 user_id="default_user",
@@ -172,6 +163,44 @@ async def chat_endpoint(request: ChatRequest):
             print(f"  Session details: app={session.app_name}, user={session.user_id}, id={session.id}")
         
         print(f"Session service DB URL: {session_service._db_url if hasattr(session_service, '_db_url') else 'unknown'}")
+        
+        # Retrieve conversation history for context enrichment
+        async def get_conversation_context() -> str:
+            """
+            Retrieves recent conversation history from the session and formats it
+            for inclusion in sub-agent prompts. This enables context-aware follow-ups.
+            """
+            try:
+                # Session object has an events list with conversation history
+                if not session.events or len(session.events) == 0:
+                    return ""
+                
+                # Get last 4 events (2 full conversation turns) to provide sufficient context
+                recent_events = session.events[-4:] if len(session.events) > 4 else session.events
+                
+                context_lines = []
+                for event in recent_events:
+                    if event.content and event.content.parts:
+                        for part in event.content.parts:
+                            if part.text:
+                                role = "User" if event.author == "user" else "Assistant"
+                                # Truncate very long responses to 2000 chars to preserve important details
+                                text = part.text[:2000] + "..." if len(part.text) > 2000 else part.text
+                                context_lines.append(f"{role}: {text}")
+                
+                if context_lines:
+                    return "\n\n[Previous conversation context:]\n" + "\n".join(context_lines) + "\n[End of context]\n\n"
+                return ""
+                
+            except Exception as e:
+                import traceback
+                print(f"[CONTEXT] Error retrieving conversation history: {e}")
+                traceback.print_exc()
+                return ""
+        
+        conversation_context = await get_conversation_context()
+        if conversation_context:
+            print(f"[CONTEXT] Retrieved {len(conversation_context)} chars of conversation history")
         
         base_url = os.getenv("BASE_URL", "http://localhost:8000")
         a2a_endpoints = {
@@ -281,7 +310,17 @@ async def chat_endpoint(request: ChatRequest):
                     tasks = []
                     for agent_intent in non_notification_tasks:
                         if agent_intent.agent_name in a2a_endpoints:
-                            tasks.append(call_a2a(a2a_endpoints[agent_intent.agent_name], agent_intent.targeted_prompt))
+                            # When conversation context exists, use original user query to preserve
+                            # context references like "that list", "from before", etc.
+                            if conversation_context:
+                                enriched_prompt = request.prompt
+                            else:
+                                enriched_prompt = agent_intent.targeted_prompt
+                            
+                            # Enrich prompt with conversation context for context-aware follow-ups
+                            if conversation_context:
+                                enriched_prompt = conversation_context + enriched_prompt
+                            tasks.append(call_a2a(a2a_endpoints[agent_intent.agent_name], enriched_prompt))
                     
                     if tasks:
                         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -319,7 +358,17 @@ async def chat_endpoint(request: ChatRequest):
                         continue
                     
                     if agent_name in a2a_endpoints:
-                        targeted_prompt = agent_intent.targeted_prompt
+                        # When conversation context exists, use original user query to preserve
+                        # context references like "that list", "from before", etc.
+                        # The intent classifier may rewrite queries in ways that lose context.
+                        if conversation_context:
+                            targeted_prompt = request.prompt
+                        else:
+                            targeted_prompt = agent_intent.targeted_prompt
+                        
+                        # Enrich prompt with conversation context for context-aware follow-ups
+                        if conversation_context:
+                            targeted_prompt = conversation_context + targeted_prompt
                         reason = agent_intent.reason
                         print(f"[ORCHESTRATOR] Calling {agent_name}: {targeted_prompt[:80]}...")
                         print(f"  Reason: {reason}")
@@ -357,6 +406,13 @@ async def chat_endpoint(request: ChatRequest):
             print(f"[ORCHESTRATOR] Collected {len(data_blocks)} data blocks")
             
             if notification_task:
+                # Start with conversation context if it exists
+                base_prompt = notification_task.targeted_prompt
+                
+                # When conversation context exists, use original user query
+                if conversation_context:
+                    base_prompt = request.prompt
+                
                 if data_blocks:
                     context_parts = []
                     for block in data_blocks:
@@ -366,12 +422,22 @@ async def chat_endpoint(request: ChatRequest):
                         else:
                             context_parts.append(str(block))
                     
-                    enriched_prompt = f"{notification_task.targeted_prompt}\n\n[Context from other agents:]\n" + "\n\n".join(context_parts)
+                    enriched_prompt = f"{base_prompt}\n\n[Context from other agents:]\n" + "\n\n".join(context_parts)
+                    
+                    # Add conversation history context
+                    if conversation_context:
+                        enriched_prompt = conversation_context + enriched_prompt
+                    
                     print(f"[ORCHESTRATOR] Calling notification with enriched context ({len(enriched_prompt)} chars)")
                     print(f"[ORCHESTRATOR] Enriched prompt preview: {enriched_prompt[:500]}...")
                 else:
-                    enriched_prompt = notification_task.targeted_prompt
-                    print(f"[ORCHESTRATOR] Calling notification with original prompt (no data context)")
+                    enriched_prompt = base_prompt
+                    
+                    # Add conversation history context even without data blocks
+                    if conversation_context:
+                        enriched_prompt = conversation_context + enriched_prompt
+                    
+                    print(f"[ORCHESTRATOR] Calling notification with context ({len(enriched_prompt)} chars)")
                 
                 try:
                     notif_result = await call_a2a(a2a_endpoints["notification"], enriched_prompt)
@@ -393,6 +459,46 @@ async def chat_endpoint(request: ChatRequest):
                     response_text = "\n\n".join(response_parts).strip()
                 else:
                     response_text = "No data available."
+            
+            # Store conversation events in session for intelligent routing path
+            # This ensures memory persistence even when bypassing Runner
+            try:
+                # Add user message to session
+                user_event = Event(
+                    author="user",
+                    content=types.Content(
+                        role="user",
+                        parts=[types.Part(text=request.prompt)]
+                    )
+                )
+                await session_service.append_event(
+                    session=session,
+                    event=user_event
+                )
+                print(f"[SESSION] Stored user message in session {session.id}")
+                
+                # Add agent response to session
+                agent_event = Event(
+                    author="orchestrator",
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part(text=response_text)]
+                    )
+                )
+                await session_service.append_event(
+                    session=session,
+                    event=agent_event
+                )
+                print(f"[SESSION] Stored agent response in session {session.id}")
+                
+                # Save session to memory for long-term retention
+                await memory_service.add_session_to_memory(session)
+                print(f"[MEMORY] Saved session {session.id} to memory")
+                
+            except Exception as e:
+                import traceback
+                print(f"[SESSION] Error storing events: {e}")
+                traceback.print_exc()
 
         if not used_intelligent_routing:
             runner = Runner(

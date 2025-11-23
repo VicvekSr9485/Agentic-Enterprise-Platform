@@ -20,9 +20,9 @@ class IntentClassification(BaseModel):
 INTENT_CLASSIFICATION_PROMPT = """You are an intent classifier for an enterprise agent orchestration system.
 
 Available agents:
-1. **inventory_specialist** - Queries product inventory database (stock levels, prices, SKUs, product details)
+1. **inventory_specialist** - Queries product inventory database by name, SKU, or category (NOT price filtering)
 2. **policy_expert** - Searches company policy documents (returns, HR policies, compliance, regulations)
-3. **analytics_specialist** - Business intelligence and analytics (trends, forecasts, reports, comparisons, anomalies)
+3. **analytics_specialist** - Business intelligence, analytics, AND PRICE FILTERING (trends, forecasts, reports, products under/over/between price ranges)
 4. **order_specialist** - Order management and procurement (purchase orders, suppliers, reorders, tracking)
 5. **notification_specialist** - Drafts and sends emails with human approval workflow
 
@@ -32,13 +32,17 @@ Analyze the user's request and determine:
 3. Whether coordination between agents is needed
 
 Rules:
-- If user asks about inventory/stock/products → use inventory_specialist
+- If user asks about inventory by name/SKU/category → use inventory_specialist
+- If user asks about PRICE filtering ("under $X", "over $Y", "between $A-$B") → use analytics_specialist
 - If user asks about policies/rules/compliance → use policy_expert
 - If user asks about trends/analysis/forecasts/reports/performance → use analytics_specialist
 - If user asks about orders/purchase/suppliers/reorder/procurement → use order_specialist
 - If user asks to draft/send/email/notify → use notification_specialist
 - If user asks multiple things (e.g., "analyze trends AND email results") → use multiple agents with coordination
 - Create targeted, specific prompts for each agent (don't pass the full user query if it contains tasks for other agents)
+
+CRITICAL: For ANY price-based filtering queries ("products under $50", "items over $100", "products between $20-$80"), 
+ALWAYS use analytics_specialist, NEVER inventory_specialist.
 
 USER REQUEST: {user_prompt}
 
@@ -87,6 +91,17 @@ Response:
   ],
   "requires_coordination": true,
   "user_intent_summary": "Get electronics return policy and valve inventory from warehouse B"
+}}
+
+User: "Show me products under $50 and send me a notification"
+Response:
+{{
+  "agents_needed": [
+    {{"agent_name": "analytics", "targeted_prompt": "Filter and show all products under $50. Include product name, SKU, price, stock quantity, and category.", "reason": "User needs price-based filtering which only analytics can do"}},
+    {{"agent_name": "notification", "targeted_prompt": "Draft an email notification with the list of products under $50", "reason": "User wants email notification with the results"}}
+  ],
+  "requires_coordination": true,
+  "user_intent_summary": "Filter products by price (under $50) and send email notification"
 }}
 
 Now classify this request and respond ONLY with valid JSON:"""

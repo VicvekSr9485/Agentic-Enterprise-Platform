@@ -458,3 +458,105 @@ def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
         
     except Exception as e:
         return f"Error detecting anomalies: {str(e)}"
+
+
+def filter_products_by_price(min_price: Optional[float] = None, max_price: Optional[float] = None, 
+                              category: Optional[str] = None, sort_by: str = "price_asc") -> str:
+    """
+    Filter products by price range and optionally by category.
+    
+    Args:
+        min_price: Minimum price filter (optional)
+        max_price: Maximum price filter (optional)
+        category: Category filter (optional)
+        sort_by: Sort order (price_asc, price_desc, name, stock)
+        
+    Returns:
+        Formatted list of products matching criteria
+    """
+    try:
+        client = get_supabase_client()
+        
+        # Start with all products
+        filters = {}
+        if category:
+            filters["category"] = f"ilike.{category}"
+        
+        results = client.query(
+            "inventory",
+            select="name,sku,quantity,price,category,location",
+            filters=filters if filters else None
+        )
+        
+        if not results:
+            return f"No products found{f' in category {category}' if category else ''}."
+        
+        # Apply price filters
+        filtered = []
+        for item in results:
+            price = float(item['price'])
+            if min_price is not None and price < min_price:
+                continue
+            if max_price is not None and price > max_price:
+                continue
+            filtered.append(item)
+        
+        if not filtered:
+            price_range = ""
+            if min_price is not None and max_price is not None:
+                price_range = f" between ${min_price:.2f} and ${max_price:.2f}"
+            elif min_price is not None:
+                price_range = f" above ${min_price:.2f}"
+            elif max_price is not None:
+                price_range = f" under ${max_price:.2f}"
+            return f"No products found{price_range}{f' in category {category}' if category else ''}."
+        
+        # Sort results
+        if sort_by == "price_asc":
+            filtered.sort(key=lambda x: float(x['price']))
+        elif sort_by == "price_desc":
+            filtered.sort(key=lambda x: float(x['price']), reverse=True)
+        elif sort_by == "name":
+            filtered.sort(key=lambda x: x['name'])
+        elif sort_by == "stock":
+            filtered.sort(key=lambda x: x['quantity'], reverse=True)
+        
+        # Calculate summary stats
+        total_value = sum(item['quantity'] * float(item['price']) for item in filtered)
+        total_units = sum(item['quantity'] for item in filtered)
+        avg_price = sum(float(item['price']) for item in filtered) / len(filtered)
+        
+        output = []
+        price_desc = ""
+        if min_price is not None and max_price is not None:
+            price_desc = f" (${min_price:.2f} - ${max_price:.2f})"
+        elif min_price is not None:
+            price_desc = f" (above ${min_price:.2f})"
+        elif max_price is not None:
+            price_desc = f" (under ${max_price:.2f})"
+        
+        output.append(f"Products Filtered by Price{price_desc}")
+        if category:
+            output.append(f"Category: {category}")
+        output.append(f"{'=' * 70}")
+        output.append(f"Found: {len(filtered)} products")
+        output.append(f"Total Value: ${total_value:,.2f}")
+        output.append(f"Total Units: {total_units:,}")
+        output.append(f"Average Price: ${avg_price:.2f}")
+        output.append("")
+        
+        output.append("Product Details:")
+        for item in filtered:
+            price = float(item['price'])
+            qty = item['quantity']
+            value = price * qty
+            output.append(f"  • {item['name']}")
+            output.append(f"    SKU: {item['sku']} | Price: ${price:.2f} | Stock: {qty} units")
+            output.append(f"    Category: {item['category']} | Location: {item['location']}")
+            output.append(f"    Total Value: ${value:,.2f}")
+            output.append("")
+        
+        return "\n".join(output)
+        
+    except Exception as e:
+        return f"Error filtering products by price: {str(e)}"
