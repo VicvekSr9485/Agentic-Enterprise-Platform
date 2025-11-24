@@ -6,16 +6,14 @@ import uuid
 
 from google.adk.runners import Runner
 from google.genai import types
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 import os
 
 from .agent import order_agent
 
 router = APIRouter(tags=["orders"])
 
-stateless_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./sessions.db")
-)
+stateless_session_service = InMemorySessionService()
 
 class A2APart(BaseModel):
     kind: str
