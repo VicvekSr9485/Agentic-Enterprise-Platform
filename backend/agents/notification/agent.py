@@ -15,14 +15,12 @@ import os
 from dotenv import load_dotenv
 
 from google.adk.agents import LlmAgent
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 from agents.notification.email_draft_tool import draft_email, compose_email_from_context
 
 load_dotenv()
 
-notification_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./notification_sessions.db")
-)
+notification_session_service = InMemorySessionService()
 
 def create_notification_agent():
     """

@@ -1,6 +1,6 @@
 import os
 from google.adk.agents import LlmAgent
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 from dotenv import load_dotenv
 
 from .order_tools import (
@@ -14,9 +14,7 @@ from .order_tools import (
 
 load_dotenv()
 
-order_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./sessions.db")
-)
+order_session_service = InMemorySessionService()
 
 def create_order_agent():
     """

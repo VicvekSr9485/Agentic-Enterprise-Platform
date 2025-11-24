@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 
 from google.adk.agents import LlmAgent
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 from agents.inventory.inventory_query_tool import (
     query_inventory,
     get_all_categories,
@@ -24,9 +24,7 @@ from agents.inventory.inventory_query_tool import (
 
 load_dotenv()
 
-inventory_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./inventory_sessions.db")
-)
+inventory_session_service = InMemorySessionService()
 
 def create_inventory_agent():
     """

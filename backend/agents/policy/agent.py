@@ -15,15 +15,13 @@ import os
 from dotenv import load_dotenv
 
 from google.adk.agents import LlmAgent
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 from agents.policy.policy_search_tool import search_policy_documents
 
 load_dotenv()
 
-# Initialize Session Service for Policy Agent (Persistence)
-policy_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./policy_sessions.db")
-)
+# Initialize Session Service for Policy Agent (in-memory for HF Spaces)
+policy_session_service = InMemorySessionService()
 
 def create_policy_agent():
     """

@@ -1,6 +1,6 @@
 import os
 from google.adk.agents import LlmAgent
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 from dotenv import load_dotenv
 
 from .analytics_tools import (
@@ -15,9 +15,7 @@ from .analytics_tools import (
 
 load_dotenv()
 
-analytics_session_service = DatabaseSessionService(
-    db_url=os.getenv("SESSION_DB_URL", "sqlite:///./sessions.db")
-)
+analytics_session_service = InMemorySessionService()
 
 def create_analytics_agent():
     """
