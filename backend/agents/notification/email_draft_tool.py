@@ -29,11 +29,27 @@ EMAIL_SIGNATURE = os.getenv("EMAIL_SIGNATURE", "Best regards\n" + COMPANY_NAME)
 
 def send_email(to: str, subject: str, body: str, html_body: str | None = None) -> str:
     """Send an email via SMTP (plain + optional HTML)."""
+    # Check if running on Hugging Face Spaces (which blocks SMTP on free tier)
+    is_hf_spaces = os.getenv("SPACE_ID") is not None or os.getenv("SPACE_AUTHOR_NAME") is not None
+    demo_mode = os.getenv("EMAIL_DEMO_MODE", "false").lower() == "true"
+    
+    # If on HF Spaces free tier or demo mode, simulate email sending
+    if is_hf_spaces or demo_mode:
+        return (
+            f"✅ Email simulated (HF Spaces free tier blocks SMTP)\n\n"
+            f"To: {to}\n"
+            f"Subject: {subject}\n\n"
+            f"Body preview (first 200 chars):\n{body[:200]}...\n\n"
+            f"💡 To enable actual email sending:\n"
+            f"1. Upgrade to HF Spaces Pro ($5/month) for SMTP, OR\n"
+            f"2. Use SendGrid/Mailgun HTTP API instead of SMTP"
+        )
+    
     try:
         smtp_user = os.getenv("SMTP_USER") or os.getenv("FROM_EMAIL")
         smtp_password = os.getenv("SMTP_PASSWORD")
         if not smtp_user or not smtp_password:
-            return "SMTP credentials not configured. Please set SMTP_USER and SMTP_PASSWORD."
+            return "❌ SMTP credentials not configured. Please set SMTP_USER and SMTP_PASSWORD."
         smtp_password = smtp_password.strip('"').strip("'")
 
         smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -48,13 +64,25 @@ def send_email(to: str, subject: str, body: str, html_body: str | None = None) -
         if html_body:
             msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
             server.starttls()
             server.login(smtp_user, smtp_password)
             server.send_message(msg)
-        return f"Email sent successfully to {to}"
+        return f"✅ Email sent successfully to {to}"
     except Exception as e:
-        return f"Failed to send email: {e}"
+        error_msg = str(e)
+        # Provide helpful error messages
+        if "Network is unreachable" in error_msg or "Connection refused" in error_msg:
+            return (
+                f"❌ Network error: {error_msg}\n\n"
+                f"This usually means SMTP is blocked by your hosting provider.\n"
+                f"Hugging Face Spaces free tier blocks outbound SMTP.\n\n"
+                f"Solutions:\n"
+                f"1. Set EMAIL_DEMO_MODE=true for simulation (demo purposes)\n"
+                f"2. Upgrade to HF Spaces Pro for SMTP support\n"
+                f"3. Use SendGrid/Mailgun HTTP API"
+            )
+        return f"❌ Failed to send email: {error_msg}"
 
 
 def draft_email(to: str, subject: str, body: str) -> str:
