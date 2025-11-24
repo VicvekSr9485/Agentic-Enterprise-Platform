@@ -50,7 +50,7 @@ Respond with a JSON object following this schema:
 {{
   "agents_needed": [
     {{
-      "agent_name": "inventory" | "policy" | "analytics" | "orders" | "notification",
+      "agent_name": "inventory_specialist" | "policy_expert" | "analytics_specialist" | "order_specialist" | "notification_specialist",
       "targeted_prompt": "Specific question for this agent",
       "reason": "Why this agent is needed"
     }}
@@ -65,7 +65,7 @@ User: "How many pumps do we have?"
 Response:
 {{
   "agents_needed": [
-    {{"agent_name": "inventory", "targeted_prompt": "How many pumps are in stock?", "reason": "User needs inventory data"}}
+    {{"agent_name": "inventory_specialist", "targeted_prompt": "How many pumps are in stock?", "reason": "User needs inventory data"}}
   ],
   "requires_coordination": false,
   "user_intent_summary": "Check pump inventory quantity"
@@ -75,8 +75,8 @@ User: "Check pump inventory and draft an email to sales about it"
 Response:
 {{
   "agents_needed": [
-    {{"agent_name": "inventory", "targeted_prompt": "What pumps do we have in stock? Include quantities, SKUs, and prices.", "reason": "Need inventory data for email"}},
-    {{"agent_name": "notification", "targeted_prompt": "Draft an email to sales@company.com summarizing the pump inventory data", "reason": "User wants to email the results"}}
+    {{"agent_name": "inventory_specialist", "targeted_prompt": "What pumps do we have in stock? Include quantities, SKUs, and prices.", "reason": "Need inventory data for email"}},
+    {{"agent_name": "notification_specialist", "targeted_prompt": "Draft an email to sales@company.com summarizing the pump inventory data", "reason": "User wants to email the results"}}
   ],
   "requires_coordination": true,
   "user_intent_summary": "Get pump inventory and email summary to sales"
@@ -86,8 +86,8 @@ User: "What's our return policy for electronics and how many valves are in wareh
 Response:
 {{
   "agents_needed": [
-    {{"agent_name": "policy", "targeted_prompt": "What is the return policy for electronics?", "reason": "User needs policy information"}},
-    {{"agent_name": "inventory", "targeted_prompt": "How many valves are in warehouse B?", "reason": "User needs inventory data"}}
+    {{"agent_name": "policy_expert", "targeted_prompt": "What is the return policy for electronics?", "reason": "User needs policy information"}},
+    {{"agent_name": "inventory_specialist", "targeted_prompt": "How many valves are in warehouse B?", "reason": "User needs inventory data"}}
   ],
   "requires_coordination": true,
   "user_intent_summary": "Get electronics return policy and valve inventory from warehouse B"
@@ -97,14 +97,14 @@ User: "Show me products under $50 and send me a notification"
 Response:
 {{
   "agents_needed": [
-    {{"agent_name": "analytics", "targeted_prompt": "Filter and show all products under $50. Include product name, SKU, price, stock quantity, and category.", "reason": "User needs price-based filtering which only analytics can do"}},
-    {{"agent_name": "notification", "targeted_prompt": "Draft an email notification with the list of products under $50", "reason": "User wants email notification with the results"}}
+    {{"agent_name": "analytics_specialist", "targeted_prompt": "Filter and show all products under $50. Include product name, SKU, price, stock quantity, and category.", "reason": "User needs price-based filtering which only analytics can do"}},
+    {{"agent_name": "notification_specialist", "targeted_prompt": "Draft an email notification with the list of products under $50", "reason": "User wants email notification with the results"}}
   ],
   "requires_coordination": true,
   "user_intent_summary": "Filter products by price (under $50) and send email notification"
 }}
 
-Now classify this request and respond ONLY with valid JSON:"""
+Now classify this request and respond with ONLY the JSON object (no other text before or after):"""
 
 
 def parse_intent_from_llm_response(response_text: str) -> Optional[IntentClassification]:
@@ -120,19 +120,51 @@ def parse_intent_from_llm_response(response_text: str) -> Optional[IntentClassif
     try:
         text = response_text.strip()
         
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
+        # Handle case where LLM includes extra text before JSON
+        # Example: "USER REQUEST: xyz\n\n```json\n{...}"
+        if "```json" in text:
+            text = text[text.index("```json") + 7:]
+        elif "```" in text:
+            text = text[text.index("```") + 3:]
+        
+        # Also check for JSON starting with { after any preamble
+        if not text.startswith("{"):
+            # Find the first { character
+            json_start = text.find("{")
+            if json_start != -1:
+                text = text[json_start:]
+        
+        # Remove trailing code fences
         if text.endswith("```"):
             text = text[:-3]
         
         text = text.strip()
+        
+        # Handle truncated JSON by trying to complete it
+        if not text.endswith("}"):
+            # Try to find the last complete JSON object
+            brace_count = 0
+            last_valid_pos = -1
+            for i, char in enumerate(text):
+                if char == "{":
+                    brace_count += 1
+                elif char == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        last_valid_pos = i
+                        break
+            
+            if last_valid_pos != -1:
+                text = text[:last_valid_pos + 1]
+            else:
+                # JSON is incomplete, try adding closing braces
+                text += '"' * text.count('"') % 2  # Close unclosed quotes
+                text += "}" * text.count("{") - text.count("}")  # Balance braces
         
         data = json.loads(text)
         
         return IntentClassification(**data)
     except Exception as e:
         print(f"[INTENT CLASSIFIER] Failed to parse LLM response: {e}")
-        print(f"[INTENT CLASSIFIER] Raw response: {response_text[:200]}")
+        print(f"[INTENT CLASSIFIER] Raw response: {response_text[:500]}")
         return None
