@@ -1,6 +1,18 @@
+---
+title: Enterprise Agents Platform API
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # Enterprise Agents Platform
 
 A production-ready Level 3 Modular Monolith Agent Swarm built with Google Agent Development Kit (ADK). This platform provides intelligent business workflow automation through specialized AI agents that communicate via the Agent-to-Agent (A2A) Protocol.
+
+**🚀 Deployed on Hugging Face Spaces** - Backend API with multi-agent orchestration, context-aware conversations, and Human-in-the-Loop workflows.
 
 ## Architecture Overview
 

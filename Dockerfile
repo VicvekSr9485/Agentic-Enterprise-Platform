@@ -1,5 +1,5 @@
-# Python backend
-FROM python:3.12-slim as backend
+# Backend-only Dockerfile for Hugging Face Spaces
+FROM python:3.12-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,17 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app/backend
 
 WORKDIR /app
 
-# Copy and install Python dependencies
-COPY backend/requirements.txt .
+# Copy backend files
+COPY backend/requirements.txt backend/requirements.txt
+
+# Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --default-timeout=300 --no-cache-dir -r requirements.txt
+    pip install --default-timeout=300 --no-cache-dir -r backend/requirements.txt
 
 # Copy backend code
-COPY backend/ .
+COPY backend/ backend/
+
+# Set working directory to backend
+WORKDIR /app/backend
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
