@@ -36,10 +36,13 @@ def send_email(to: str, subject: str, body: str, html_body: str | None = None) -
     # If on HF Spaces free tier or demo mode, simulate email sending
     if is_hf_spaces or demo_mode:
         return (
-            f"✅ Email simulated (HF Spaces free tier blocks SMTP)\n\n"
+            f"✅ Email Approved & Simulated Successfully\n\n"
+            f"📧 Email Details:\n"
             f"To: {to}\n"
             f"Subject: {subject}\n\n"
-            f"Body preview (first 200 chars):\n{body[:200]}...\n\n"
+            f"📄 Full Content:\n{body}\n\n"
+            f"ℹ️ Note: Running on Hugging Face Spaces free tier (SMTP blocked).\n"
+            f"Email content has been generated and would be sent in production."
         )
     
     try:
