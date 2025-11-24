@@ -16,18 +16,27 @@ export function useChat(sessionId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, prompt: text })
       });
+      
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status} ${res.statusText}`);
+      }
+      
       const data = await res.json();
       const responseText = data.response || '';
       setMessages((prev) => [...prev, { role: 'assistant', content: responseText }]);
 
+      // Handle approval workflow state
       if (data.pending_approval) {
         setPendingApproval({ type: data.approval_type, content: responseText });
       } else {
+        // Clear pending approval when approval is processed or no approval needed
         setPendingApproval(null);
       }
     } catch (e) {
       setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
+      setPendingApproval(null); // Clear approval state on error
     } finally {
+      // Always clear loading state
       setIsLoading(false);
     }
   }, [sessionId]);
