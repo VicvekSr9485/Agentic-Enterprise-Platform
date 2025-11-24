@@ -310,12 +310,10 @@ async def chat_endpoint(request: ChatRequest):
                     tasks = []
                     for agent_intent in non_notification_tasks:
                         if agent_intent.agent_name in a2a_endpoints:
-                            # When conversation context exists, use original user query to preserve
-                            # context references like "that list", "from before", etc.
-                            if conversation_context:
-                                enriched_prompt = request.prompt
-                            else:
-                                enriched_prompt = agent_intent.targeted_prompt
+                            # CRITICAL: Always use targeted_prompt from intent classifier.
+                            # It properly extracts agent-specific tasks and removes cross-agent confusion.
+                            # Example: For inventory: "get available documents" NOT "get docs and send email"
+                            enriched_prompt = agent_intent.targeted_prompt
                             
                             # Enrich prompt with conversation context for context-aware follow-ups
                             if conversation_context:
@@ -358,13 +356,10 @@ async def chat_endpoint(request: ChatRequest):
                         continue
                     
                     if agent_name in a2a_endpoints:
-                        # When conversation context exists, use original user query to preserve
-                        # context references like "that list", "from before", etc.
-                        # The intent classifier may rewrite queries in ways that lose context.
-                        if conversation_context:
-                            targeted_prompt = request.prompt
-                        else:
-                            targeted_prompt = agent_intent.targeted_prompt
+                        # CRITICAL: Always use targeted_prompt from intent classifier.
+                        # It properly extracts agent-specific tasks and removes cross-agent confusion.
+                        # Example: For inventory: "get available documents" NOT "get docs and send email"
+                        targeted_prompt = agent_intent.targeted_prompt
                         
                         # Enrich prompt with conversation context for context-aware follow-ups
                         if conversation_context:
