@@ -37,10 +37,10 @@ if use_supabase_sessions:
     )
     print("[SESSION] Using Supabase session storage (persistent across deployments)")
 else:
-    orchestrator_session_service = DatabaseSessionService(
-        db_url=os.getenv("SESSION_DB_URL", "sqlite:///./orchestrator_sessions.db")
-    )
-    print("[SESSION] Using SQLite session storage (ephemeral - lost on restart)")
+    # Use aiosqlite+sqlite for async SQLite support
+    db_url = os.getenv("SESSION_DB_URL", "sqlite+aiosqlite:///./orchestrator_sessions.db")
+    orchestrator_session_service = DatabaseSessionService(db_url=db_url)
+    print(f"[SESSION] Using SQLite session storage (ephemeral) - {db_url}")
 
 # Callback to automatically save sessions to memory after each agent turn
 async def auto_save_to_memory(callback_context):
