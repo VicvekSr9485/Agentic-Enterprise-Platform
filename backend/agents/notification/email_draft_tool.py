@@ -40,9 +40,6 @@ def send_email(to: str, subject: str, body: str, html_body: str | None = None) -
             f"To: {to}\n"
             f"Subject: {subject}\n\n"
             f"Body preview (first 200 chars):\n{body[:200]}...\n\n"
-            f"💡 To enable actual email sending:\n"
-            f"1. Upgrade to HF Spaces Pro ($5/month) for SMTP, OR\n"
-            f"2. Use SendGrid/Mailgun HTTP API instead of SMTP"
         )
     
     try:
