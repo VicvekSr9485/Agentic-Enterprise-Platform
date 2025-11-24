@@ -37,10 +37,11 @@ if use_supabase_sessions:
     )
     print("[SESSION] Using Supabase session storage (persistent across deployments)")
 else:
-    # Use aiosqlite+sqlite for async SQLite support
-    db_url = os.getenv("SESSION_DB_URL", "sqlite+aiosqlite:///./orchestrator_sessions.db")
-    orchestrator_session_service = DatabaseSessionService(db_url=db_url)
-    print(f"[SESSION] Using SQLite session storage (ephemeral) - {db_url}")
+    # For HF Spaces and other ephemeral environments, use InMemorySessionService
+    # to avoid SQLite async driver issues
+    from google.adk.sessions import InMemorySessionService
+    orchestrator_session_service = InMemorySessionService()
+    print("[SESSION] Using in-memory session storage (ephemeral - lost on restart)")
 
 # Callback to automatically save sessions to memory after each agent turn
 async def auto_save_to_memory(callback_context):
