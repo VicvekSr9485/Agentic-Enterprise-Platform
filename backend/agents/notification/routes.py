@@ -157,7 +157,6 @@ async def handle_task(request: A2ARequest):
                     elif hasattr(part, 'function_call') and part.function_call:
                         print(f"[NOTIFICATION A2A] Function call detected: {part.function_call}")
         
-        # If we have function results but no text, use the function results
         if function_results and not result_text:
             result_text = "\n\n".join(function_results)
             print(f"[NOTIFICATION A2A] Using function results as response")

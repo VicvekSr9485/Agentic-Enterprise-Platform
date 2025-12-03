@@ -20,10 +20,9 @@ def check_env_var(var_name, required=True):
 def main():
     print("=" * 80)
     print("🔍 Enterprise Agents Platform - Configuration Validator")
-    print("=" * 80)
+    print("="  * 80)
     print()
     
-    # Load .env file
     env_path = Path(__file__).parent.parent / ".env"
     if env_path.exists():
         print(f"✅ Environment file found: {env_path}")

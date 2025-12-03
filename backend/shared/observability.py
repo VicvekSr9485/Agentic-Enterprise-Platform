@@ -10,7 +10,6 @@ import logging
 import structlog
 from typing import Optional
 
-# OpenTelemetry imports
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -38,7 +37,7 @@ def configure_structured_logging(log_level: str = "INFO"):
             structlog.processors.StackInfoRenderer(),
             structlog.dev.set_exc_info,
             structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer()  # Use JSONRenderer() for production
+            structlog.dev.ConsoleRenderer()
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level_num),
         context_class=dict,
@@ -46,7 +45,6 @@ def configure_structured_logging(log_level: str = "INFO"):
         cache_logger_on_first_use=True,
     )
     
-    # Configure stdlib logging
     logging.basicConfig(
         format="%(message)s",
         level=log_level_num,
@@ -79,7 +77,6 @@ def setup_opentelemetry(
         logger.info("OpenTelemetry not configured (no OTLP endpoint)")
         return None, None
     
-    # Create resource with service information
     resource = Resource(attributes={
         SERVICE_NAME: service_name,
         "service.version": "1.0.0",
@@ -89,11 +86,9 @@ def setup_opentelemetry(
     tracer = None
     meter = None
     
-    # Setup Tracing
     if enable_tracing:
         trace_provider = TracerProvider(resource=resource)
         
-        # Configure OTLP trace exporter
         otlp_trace_exporter = OTLPSpanExporter(
             endpoint=f"{otlp_endpoint}/v1/traces"
         )
@@ -104,10 +99,8 @@ def setup_opentelemetry(
         trace.set_tracer_provider(trace_provider)
         tracer = trace.get_tracer(__name__)
         
-        # Instrument FastAPI
         FastAPIInstrumentor().instrument()
     
-    # Setup Metrics
     if enable_metrics:
         metric_reader = PeriodicExportingMetricReader(
             OTLPMetricExporter(endpoint=f"{otlp_endpoint}/v1/metrics")
@@ -206,5 +199,4 @@ class AgentMetrics:
             )
 
 
-# Global logger instance
 logger = structlog.get_logger()

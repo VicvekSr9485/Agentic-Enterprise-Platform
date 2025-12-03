@@ -5,16 +5,16 @@ import json
 
 class AgentIntent(BaseModel):
     """Represents an agent that should be invoked"""
-    agent_name: str  # "inventory", "policy", "notification"
-    targeted_prompt: str  # Simplified prompt for this specific agent
-    reason: str  # Why this agent is needed
+    agent_name: str
+    targeted_prompt: str 
+    reason: str
 
 
 class IntentClassification(BaseModel):
     """Result of intent classification"""
     agents_needed: List[AgentIntent]
-    requires_coordination: bool  # True if multiple agents need to coordinate
-    user_intent_summary: str  # Brief summary of what user wants
+    requires_coordination: bool  
+    user_intent_summary: str 
 
 
 INTENT_CLASSIFICATION_PROMPT = """You are an intent classifier for an enterprise agent orchestration system.
@@ -34,6 +34,7 @@ Analyze the user's request and determine:
 Rules:
 - If user asks about inventory by name/SKU/category → use inventory_specialist
 - If user asks about PRICE filtering ("under $X", "over $Y", "between $A-$B") → use analytics_specialist
+- If user asks about QUANTITY filtering ("below X units", "less than Y", "under Z stock") → use analytics_specialist
 - If user asks about policies/rules/compliance → use policy_expert
 - If user asks about policies/rules/compliance (EXCEPT supplier compliance) → use policy_expert
 - If user asks about orders/purchase/suppliers/reorder/procurement OR supplier compliance → use order_specialist
@@ -41,6 +42,7 @@ Rules:
 - If user asks multiple things (e.g., "analyze trends AND email results") → use multiple agents with coordination
 - If tasks are INDEPENDENT (e.g., "Stock of X and Policy for Y") → set "requires_coordination": false
 - Create targeted, specific prompts for each agent (don't pass the full user query if it contains tasks for other agents)
+- For follow-up questions with pronouns (it, them, that, which), maintain the domain from previous context
 
 CRITICAL: For ANY price-based filtering queries ("products under $50", "items over $100", "products between $20-$80"), 
 ALWAYS use analytics_specialist, NEVER inventory_specialist.
@@ -132,30 +134,23 @@ def parse_intent_from_llm_response(response_text: str) -> Optional[IntentClassif
     """
     try:
         text = response_text.strip()
-        
-        # Handle case where LLM includes extra text before JSON
-        # Example: "USER REQUEST: xyz\n\n```json\n{...}"
+
         if "```json" in text:
             text = text[text.index("```json") + 7:]
         elif "```" in text:
             text = text[text.index("```") + 3:]
         
-        # Also check for JSON starting with { after any preamble
         if not text.startswith("{"):
-            # Find the first { character
             json_start = text.find("{")
             if json_start != -1:
                 text = text[json_start:]
-        
-        # Remove trailing code fences
+
         if text.endswith("```"):
             text = text[:-3]
         
         text = text.strip()
-        
-        # Handle truncated JSON by trying to complete it
+     
         if not text.endswith("}"):
-            # Try to find the last complete JSON object
             brace_count = 0
             last_valid_pos = -1
             for i, char in enumerate(text):
@@ -170,9 +165,8 @@ def parse_intent_from_llm_response(response_text: str) -> Optional[IntentClassif
             if last_valid_pos != -1:
                 text = text[:last_valid_pos + 1]
             else:
-                # JSON is incomplete, try adding closing braces
-                text += '"' * text.count('"') % 2  # Close unclosed quotes
-                text += "}" * text.count("{") - text.count("}")  # Balance braces
+                text += '"' * text.count('"') % 2
+                text += "}" * text.count("{") - text.count("}")
         
         data = json.loads(text)
         

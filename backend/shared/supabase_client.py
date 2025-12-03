@@ -208,7 +208,6 @@ class SupabaseClient:
             raise Exception(f"Supabase RPC failed: {str(e)}")
 
 
-# Global client instance
 _client: Optional[SupabaseClient] = None
 
 

@@ -9,7 +9,6 @@ import vecs
 from google import genai
 from dotenv import load_dotenv
 
-# Setup logging to stderr
 logging.basicConfig(
     level=logging.INFO,
     format='[POLICY MCP] %(message)s',
@@ -55,13 +54,11 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             query_text = arguments.get("query", "")
             logging.info(f"Searching policies for: {query_text}")
 
-            # Generate embedding
             embedding = genai_client.models.embed_content(
                 model="text-embedding-004",
                 contents=query_text
             ).embeddings[0].values
 
-            # Query vector database
             results = docs.query(
                 data=embedding,
                 limit=3,
@@ -100,7 +97,6 @@ if __name__ == "__main__":
     import sys
     import logging
     
-    # Setup logging to stderr so it doesn't interfere with MCP protocol
     logging.basicConfig(
         level=logging.INFO,
         format='[POLICY MCP] %(message)s',
@@ -112,7 +108,6 @@ if __name__ == "__main__":
             logging.info("Starting Policy RAG MCP Server")
             async with stdio_server() as (read, write):
                 logging.info("MCP Server initialized successfully")
-                # Provide proper initialization options
                 init_options = InitializationOptions(
                     server_name="policy_rag_server",
                     server_version="1.0.0",

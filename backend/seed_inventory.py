@@ -13,7 +13,6 @@ from psycopg2.extras import execute_values
 
 load_dotenv()
 
-# Sample inventory data
 PRODUCTS = [
     {
         "product_id": 1,
@@ -99,13 +98,11 @@ def seed_inventory():
         sys.exit(1)
     
     try:
-        # Connect to PostgreSQL
         conn = psycopg2.connect(db_url)
         cursor = conn.cursor()
         
         print("📊 Creating inventory table if not exists...")
         
-        # Create inventory table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS inventory (
                 product_id INTEGER PRIMARY KEY,
@@ -122,10 +119,8 @@ def seed_inventory():
         
         print(f"\n📝 Inserting {len(PRODUCTS)} products...\n")
         
-        # Clear existing data
         cursor.execute("DELETE FROM inventory")
         
-        # Prepare data for batch insert
         values = [
             (
                 p["product_id"],
@@ -139,7 +134,6 @@ def seed_inventory():
             for p in PRODUCTS
         ]
         
-        # Batch insert
         execute_values(
             cursor,
             """
@@ -159,10 +153,8 @@ def seed_inventory():
             values
         )
         
-        # Commit transaction
         conn.commit()
         
-        # Verify insertion
         cursor.execute("SELECT COUNT(*) FROM inventory")
         count = cursor.fetchone()[0]
         
@@ -178,7 +170,6 @@ def seed_inventory():
         for row in cursor.fetchall():
             print(f"   - {row[0]} ({row[1]}): {row[2]} units @ ${row[3]}")
         
-        # Close connections
         cursor.close()
         conn.close()
         

@@ -5,9 +5,9 @@ from datetime import datetime
 class PendingApproval(BaseModel):
     """Represents a pending HITL approval"""
     session_id: str
-    agent_name: str  # Which agent needs approval
-    action_type: str  # "email_send", "data_delete", etc.
-    draft_content: str  # The thing being approved
+    agent_name: str
+    action_type: str
+    draft_content: str
     created_at: datetime
     metadata: Dict = {}
 

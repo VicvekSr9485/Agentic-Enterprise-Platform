@@ -164,29 +164,41 @@ async def chat_endpoint(request: ChatRequest):
         
         print(f"Session service DB URL: {session_service._db_url if hasattr(session_service, '_db_url') else 'unknown'}")
         
-        # Retrieve conversation history for context enrichment
         async def get_conversation_context() -> str:
             """
             Retrieves recent conversation history from the session and formats it
             for inclusion in sub-agent prompts. This enables context-aware follow-ups.
             """
             try:
-                # Session object has an events list with conversation history
                 if not session.events or len(session.events) == 0:
                     return ""
                 
-                # Get last 4 events (2 full conversation turns) to provide sufficient context
-                recent_events = session.events[-4:] if len(session.events) > 4 else session.events
+                recent_events = session.events[-8:] if len(session.events) > 8 else session.events
                 
                 context_lines = []
+                error_patterns = [
+                    "no data available",
+                    "i am sorry",
+                    "encountered an error",
+                    "cannot find",
+                    "error while",
+                    "failed to"
+                ]
+                
                 for event in recent_events:
                     if event.content and event.content.parts:
                         for part in event.content.parts:
                             if part.text:
                                 role = "User" if event.author == "user" else "Assistant"
-                                # Truncate very long responses to 2000 chars to preserve important details
-                                text = part.text[:2000] + "..." if len(part.text) > 2000 else part.text
-                                context_lines.append(f"{role}: {text}")
+                                text = part.text
+                                
+                                text_lower = text.lower()
+                                is_error = any(pattern in text_lower for pattern in error_patterns)
+                                is_empty = len(text.strip()) < 10
+                                
+                                if not is_error and not is_empty:
+                                    text = text[:1500] + "..." if len(text) > 1500 else text
+                                    context_lines.append(f"{role}: {text}")
                 
                 if context_lines:
                     return "\n\n[Previous conversation context:]\n" + "\n".join(context_lines) + "\n[End of context]\n\n"
@@ -245,7 +257,6 @@ async def chat_endpoint(request: ChatRequest):
             result = "\n".join([ln for ln in lines if ln.strip()])
             cleaned = result.strip()
             
-            # Strip wrapping quotes if present
             if cleaned.startswith('"') and cleaned.endswith('"'):
                 cleaned = cleaned[1:-1]
             if cleaned.startswith("'") and cleaned.endswith("'"):
@@ -315,12 +326,8 @@ async def chat_endpoint(request: ChatRequest):
                     tasks = []
                     for agent_intent in non_notification_tasks:
                         if agent_intent.agent_name in a2a_endpoints:
-                            # CRITICAL: Always use targeted_prompt from intent classifier.
-                            # It properly extracts agent-specific tasks and removes cross-agent confusion.
-                            # Example: For inventory: "get available documents" NOT "get docs and send email"
                             enriched_prompt = agent_intent.targeted_prompt
                             
-                            # Enrich prompt with conversation context for context-aware follow-ups
                             if conversation_context:
                                 enriched_prompt = conversation_context + enriched_prompt
                             tasks.append(call_a2a(a2a_endpoints[agent_intent.agent_name], enriched_prompt))

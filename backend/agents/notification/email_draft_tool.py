@@ -29,11 +29,9 @@ EMAIL_SIGNATURE = os.getenv("EMAIL_SIGNATURE", "Best regards\n" + COMPANY_NAME)
 
 def send_email(to: str, subject: str, body: str, html_body: str | None = None) -> str:
     """Send an email via SMTP (plain + optional HTML)."""
-    # Check if running on Hugging Face Spaces (which blocks SMTP on free tier)
     is_hf_spaces = os.getenv("SPACE_ID") is not None or os.getenv("SPACE_AUTHOR_NAME") is not None
     demo_mode = os.getenv("EMAIL_DEMO_MODE", "false").lower() == "true"
     
-    # If on HF Spaces free tier or demo mode, simulate email sending
     if is_hf_spaces or demo_mode:
         return (
             f"✅ Email Approved & Simulated Successfully\n\n"
@@ -71,7 +69,6 @@ def send_email(to: str, subject: str, body: str, html_body: str | None = None) -
         return f"✅ Email sent successfully to {to}"
     except Exception as e:
         error_msg = str(e)
-        # Provide helpful error messages
         if "Network is unreachable" in error_msg or "Connection refused" in error_msg:
             return (
                 f"❌ Network error: {error_msg}\n\n"
@@ -134,26 +131,21 @@ def _parse_inventory(lines: list[str]) -> list[dict]:
     for ln in lines:
         ln_clean = ln.strip()
         
-        # Match item name with SKU: "**Industrial Water Pump Model A** (SKU: PUMP-001)"
         name_sku_match = re.search(r'\*?\*?\s*(.+?)\s*\(SKU:\s*([A-Z\-0-9]+)\)', ln_clean, re.IGNORECASE)
         if name_sku_match:
-            # Save previous item if exists
             if current_item and 'name' in current_item:
                 items.append(current_item)
-            # Start new item
             name = re.sub(r'\*+', '', name_sku_match.group(1)).strip()
             sku = name_sku_match.group(2).strip()
             current_item = {'name': name, 'sku': sku, 'qty': 0, 'price': None, 'ext': None}
             continue
         
-        # Match stock: "Stock: 50 units"
         if current_item:
             stock_match = re.search(r'Stock:\s*(\d+)\s+units?', ln_clean, re.IGNORECASE)
             if stock_match:
                 current_item['qty'] = int(stock_match.group(1))
                 continue
             
-            # Match price: "Price: $299.99"
             price_match = re.search(r'Price:\s*\$(\d+(?:\.\d+)?)', ln_clean, re.IGNORECASE)
             if price_match:
                 current_item['price'] = float(price_match.group(1))
@@ -161,7 +153,6 @@ def _parse_inventory(lines: list[str]) -> list[dict]:
                     current_item['ext'] = current_item['qty'] * current_item['price']
                 continue
     
-    # Save last item
     if current_item and 'name' in current_item:
         items.append(current_item)
     
@@ -170,7 +161,6 @@ def _parse_inventory(lines: list[str]) -> list[dict]:
 def _format_inventory_table(items: list[dict]) -> tuple[str, str]:
     if not items:
         return "", ""
-    # Plain text table
     headers = ["Model", "SKU", "Qty", "Unit", "Value"]
     rows = []
     for it in items:
@@ -230,7 +220,6 @@ def compose_email_from_context(recipient: str, purpose: str, context_data: str) 
     cleaned = _sanitize_context(context_data)
     inventory_items = _parse_inventory(cleaned)
 
-    # Subject with summary metrics if inventory present
     if inventory_items:
         total_units = sum(i['qty'] for i in inventory_items)
         distinct = len(inventory_items)
@@ -242,7 +231,6 @@ def compose_email_from_context(recipient: str, purpose: str, context_data: str) 
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    # Intro paragraph
     intro_parts = [
         f"This message presents the current {refined_purpose.lower()} status." if refined_purpose else "This message presents current status update.",
     ]
@@ -258,7 +246,6 @@ def compose_email_from_context(recipient: str, purpose: str, context_data: str) 
             intro_parts.append(
                 f"We maintain {total_units} total units across {distinct} model(s)."
             )
-        # Stock health assessment (simple heuristic)
         min_qty = min(i['qty'] for i in inventory_items)
         if min_qty < 25:
             intro_parts.append("One or more models are approaching low threshold; monitor replenishment schedule.")
@@ -267,7 +254,6 @@ def compose_email_from_context(recipient: str, purpose: str, context_data: str) 
     intro_parts.append(f"Snapshot generated {timestamp}.")
     intro = " " .join(intro_parts)
 
-    # Narrative item lines
     narrative_lines: list[str] = []
     for it in inventory_items:
         unit_price = f"${it['price']:.2f}" if it['price'] is not None else "(price N/A)"
@@ -276,14 +262,12 @@ def compose_email_from_context(recipient: str, purpose: str, context_data: str) 
             f"{it['name']} (SKU {it['sku']}) – {it['qty']} units at {unit_price}{value}."
         )
 
-    # Supplemental (non-inventory) cleaned lines - exclude lines that contributed to inventory parsing
     inventory_line_patterns = [r'\(SKU:', r'Stock:\s*\d+', r'Price:\s*\$', r'Category:', r'Location:']
     supplemental = [
         ln for ln in cleaned 
         if not any(re.search(pattern, ln, re.IGNORECASE) for pattern in inventory_line_patterns)
     ]
 
-    # Merge sections: inventory narrative first, then supplemental context
     sections = narrative_lines + supplemental
 
     body = _format_body(
@@ -293,7 +277,6 @@ def compose_email_from_context(recipient: str, purpose: str, context_data: str) 
         closing="Please advise if any further breakdown, forward scheduling, or escalation is required.",
     )
 
-    # HTML variant narrative (simple list)
     html_sections = sections
     html_variant = _build_html(subject, html_sections, intro)
     os.environ["LAST_EMAIL_HTML"] = html_variant

@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import statistics
 
-# Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from shared.supabase_client import get_supabase_client
@@ -23,7 +22,6 @@ def get_low_stock_items(threshold: int = 20) -> str:
     try:
         client = get_supabase_client()
         
-        # Get all products and filter by threshold
         results = client.query(
             "inventory",
             select="name,sku,quantity,category,location,price",
@@ -33,7 +31,6 @@ def get_low_stock_items(threshold: int = 20) -> str:
         if not results:
             return "No inventory data available."
         
-        # Filter for low stock items
         low_stock = [item for item in results if item['quantity'] <= threshold]
         
         if not low_stock:

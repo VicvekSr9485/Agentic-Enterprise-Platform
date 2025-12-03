@@ -23,11 +23,8 @@ from typing import Dict, Any
 
 load_dotenv()
 
-# Initialize Memory Service for orchestrator (Global Context)
 orchestrator_memory = InMemoryMemoryService()
 
-# Initialize Session Service for orchestrator (Persistence)
-# Support both Supabase (persistent) and SQLite (ephemeral) storage
 use_supabase_sessions = os.getenv("USE_SUPABASE_SESSIONS", "false").lower() == "true"
 
 if use_supabase_sessions:
@@ -37,13 +34,10 @@ if use_supabase_sessions:
     )
     print("[SESSION] Using Supabase session storage (persistent across deployments)")
 else:
-    # For HF Spaces and other ephemeral environments, use InMemorySessionService
-    # to avoid SQLite async driver issues
     from google.adk.sessions import InMemorySessionService
     orchestrator_session_service = InMemorySessionService()
     print("[SESSION] Using in-memory session storage (ephemeral - lost on restart)")
 
-# Callback to automatically save sessions to memory after each agent turn
 async def auto_save_to_memory(callback_context):
     """
     After each agent turn, save the current session to long-term memory.
@@ -74,7 +68,6 @@ def create_orchestrator():
         LlmAgent: Configured orchestrator agent with memory and sub-agents
     """
     
-    # A2A Agent Card URLs (Monolith Path URLs)
     base_url = os.getenv("BASE_URL", "http://localhost:8000")
     inventory_url = f"{base_url}/inventory{AGENT_CARD_WELL_KNOWN_PATH}"
     policy_url = f"{base_url}/policy{AGENT_CARD_WELL_KNOWN_PATH}"
@@ -141,7 +134,6 @@ def create_orchestrator():
         agent_card=orders_url
     )
     
-    # System Instructions for Orchestrator
     system_instructions = """
     You are the Enterprise Orchestrator Agent, a Level 3 coordinator responsible for 
     managing complex business workflows across specialized sub-agents.

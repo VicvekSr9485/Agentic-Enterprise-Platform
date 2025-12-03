@@ -13,7 +13,6 @@ from google import genai
 
 load_dotenv()
 
-# Sample policy documents
 POLICIES = [
     {
         "id": "pol-001",
@@ -140,7 +139,6 @@ def seed_policies():
     vx = vecs.create_client(db_url)
     
     print("📚 Creating/getting policy_documents collection...")
-    # Create or get collection with 768 dimensions (text-embedding-004)
     docs = vx.get_or_create_collection(name="policy_documents", dimension=768)
     
     print("🤖 Initializing embedding model...")
@@ -157,7 +155,6 @@ def seed_policies():
     for i, policy in enumerate(POLICIES, 1):
         print(f"  [{i}/{len(POLICIES)}] Embedding: {policy['title']}")
         
-        # Generate embedding for the policy content
         try:
             response = client.models.embed_content(
                 model="text-embedding-004",
@@ -165,7 +162,6 @@ def seed_policies():
             )
             embedding = response.embeddings[0].values
             
-            # Prepare record: (id, embedding_vector, metadata)
             records.append((
                 policy['id'],
                 embedding,
@@ -192,12 +188,10 @@ def seed_policies():
         docs.upsert(records=records)
         print("✅ Successfully inserted policy documents!")
         
-        # Create index for faster similarity search
         print("\n🔍 Creating vector index...")
         docs.create_index()
         print("✅ Index created!")
         
-        # Test query
         print("\n🧪 Testing vector search with sample query...")
         test_embedding = client.models.embed_content(
             model="text-embedding-004",
@@ -214,7 +208,6 @@ def seed_policies():
         if results:
             print(f"✅ Found {len(results)} relevant policies:")
             for result in results:
-                # result format: (distance/similarity, content, metadata)
                 print(f"   - {result[2]['title']}")
         else:
             print("⚠️  No results found in test query")

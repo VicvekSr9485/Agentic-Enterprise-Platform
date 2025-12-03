@@ -20,7 +20,6 @@ from agents.policy.policy_search_tool import search_policy_documents
 
 load_dotenv()
 
-# Initialize Session Service for Policy Agent (in-memory for HF Spaces)
 policy_session_service = InMemorySessionService()
 
 def create_policy_agent():
@@ -38,7 +37,6 @@ def create_policy_agent():
         LlmAgent: Configured policy agent with RAG tools
     """
     
-    # System Instructions
     system_instructions = """
     You are the Policy Expert, a RAG-powered specialist in company policy 
     compliance and regulatory interpretation.
@@ -58,8 +56,8 @@ def create_policy_agent():
     OPERATIONAL RULES:
     1. NEVER FABRICATE POLICY:
        - Only cite policies found through search_policy_documents tool
-       - If search returns no results, explicitly state: 
-         "I cannot find a policy covering this specific scenario."
+       - If search returns no results for a specific query, try a broader search
+       - If user asks "what policies are available", list policy categories you find
        - Never guess or infer policy from general knowledge
     
     2. SOURCE CITATION:
@@ -81,6 +79,12 @@ def create_policy_agent():
     - Always call search_policy_documents before answering policy questions
     - Use specific, descriptive query text for better search results
     - Example query: "return policy for electronics" not just "returns"
+    - For "list all policies" or "available policies", search for: "company policy documents overview"
+    
+    SPECIAL CASES:
+    - If user asks "what policies are available" or "list all policies":
+      Call search_policy_documents with query="company policy employee handbook"
+      This will return a broad overview of available policy categories
     
     EXAMPLE INTERACTIONS:
     User: "Can a customer return a product after 45 days?"
@@ -98,7 +102,7 @@ def create_policy_agent():
         model="gemini-2.5-flash-lite",
         name="policy_agent",
         instruction=system_instructions,
-        tools=[search_policy_documents],  # Direct Python function, no MCP
+        tools=[search_policy_documents],
     )
     
     return agent
