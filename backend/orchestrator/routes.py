@@ -20,6 +20,7 @@ import re
 import time
 
 from shared.agent_metrics import agent_metrics
+from shared.retry_handler import get_retry_handler, async_retry_with_backoff, RetryConfig
 
 router = APIRouter()
 
@@ -117,11 +118,19 @@ async def chat_endpoint(request: ChatRequest):
         classification_prompt = INTENT_CLASSIFICATION_PROMPT.format(user_prompt=request.prompt)
         
         intent_classification = None
-        try:
-            llm_response = await asyncio.wait_for(
-                asyncio.to_thread(intent_classifier_model.generate_content, classification_prompt),
-                timeout=10.0
+        
+        @async_retry_with_backoff(
+            config=RetryConfig(max_retries=2, initial_delay=1.0, max_delay=10.0),
+            log_func=lambda msg: print(f"[INTENT CLASSIFIER RETRY] {msg}")
+        )
+        async def classify_intent():
+            return await asyncio.to_thread(
+                intent_classifier_model.generate_content,
+                classification_prompt
             )
+        
+        try:
+            llm_response = await asyncio.wait_for(classify_intent(), timeout=15.0)
             intent_classification = parse_intent_from_llm_response(llm_response.text)
             
             if intent_classification:
@@ -264,7 +273,19 @@ async def chat_endpoint(request: ChatRequest):
             
             return cleaned
 
-        async def call_a2a(url: str, prompt: str, retry_count: int = 2) -> str:
+        retry_config = RetryConfig(
+            max_retries=3,
+            initial_delay=2.0,
+            max_delay=30.0,
+            exponential_base=2.0,
+            jitter=True
+        )
+        
+        @async_retry_with_backoff(
+            config=retry_config,
+            log_func=lambda msg: print(f"[ORCHESTRATOR RETRY] {msg}")
+        )
+        async def call_a2a(url: str, prompt: str) -> str:
             payload = {
                 "id": str(uuid.uuid4()),
                 "jsonrpc": "2.0",
@@ -280,30 +301,24 @@ async def chat_endpoint(request: ChatRequest):
                 },
             }
             
-            for attempt in range(retry_count + 1):
-                try:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        r = await client.post(url, json=payload)
-                        r.raise_for_status()
-                        data = r.json()
-                        
-                        if "error" in data:
-                            error_msg = data["error"].get("message", "Unknown error")
-                            print(f"[ORCHESTRATOR] Agent returned error: {error_msg}")
-                            return f"Error from agent: {error_msg}"
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.post(url, json=payload)
+                r.raise_for_status()
+                data = r.json()
+                
+                if "error" in data:
+                    error_msg = data["error"].get("message", "Unknown error")
+                    if "429" in error_msg or "rate limit" in error_msg.lower() or "quota" in error_msg.lower():
+                        raise Exception(f"Rate limit error: {error_msg}")
+                    print(f"[ORCHESTRATOR] Agent returned error: {error_msg}")
+                    return f"Error from agent: {error_msg}"
 
-                        try:
-                            parts = data.get("result", {}).get("parts", [])
-                            texts = [p.get("text", "") for p in parts if p.get("kind") == "text"]
-                            return _sanitize("\n".join(t for t in texts if t))
-                        except Exception:
-                            return _sanitize(json.dumps(data))
-                except Exception as e:
-                    if attempt < retry_count:
-                        print(f"[ORCHESTRATOR] Retry {attempt + 1}/{retry_count} for {url}: {e}")
-                        await asyncio.sleep(1)
-                    else:
-                        raise
+                try:
+                    parts = data.get("result", {}).get("parts", [])
+                    texts = [p.get("text", "") for p in parts if p.get("kind") == "text"]
+                    return _sanitize("\n".join(t for t in texts if t))
+                except Exception:
+                    return _sanitize(json.dumps(data))
 
         used_intelligent_routing = False
         response_text = ""
