@@ -232,7 +232,6 @@ async def chat_endpoint(request: ChatRequest):
                 "please contact",
                 "please check",
                 "would you like me to proceed",
-                "however, i",
                 "nor can i",
             ]
             lines = []
@@ -276,6 +275,12 @@ async def chat_endpoint(request: ChatRequest):
                         r = await client.post(url, json=payload)
                         r.raise_for_status()
                         data = r.json()
+                        
+                        if "error" in data:
+                            error_msg = data["error"].get("message", "Unknown error")
+                            print(f"[ORCHESTRATOR] Agent returned error: {error_msg}")
+                            return f"Error from agent: {error_msg}"
+
                         try:
                             parts = data.get("result", {}).get("parts", [])
                             texts = [p.get("text", "") for p in parts if p.get("kind") == "text"]

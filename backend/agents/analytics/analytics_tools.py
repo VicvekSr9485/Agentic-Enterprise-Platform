@@ -10,6 +10,59 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from shared.supabase_client import get_supabase_client
 
 
+def get_low_stock_items(threshold: int = 20) -> str:
+    """
+    Get products with stock levels below a specified threshold.
+    
+    Args:
+        threshold: Stock quantity threshold (default 20 units)
+        
+    Returns:
+        Formatted string with low stock products
+    """
+    try:
+        client = get_supabase_client()
+        
+        # Get all products and filter by threshold
+        results = client.query(
+            "inventory",
+            select="name,sku,quantity,category,location,price",
+            order="quantity.asc"
+        )
+        
+        if not results:
+            return "No inventory data available."
+        
+        # Filter for low stock items
+        low_stock = [item for item in results if item['quantity'] <= threshold]
+        
+        if not low_stock:
+            return f"No products found with stock below {threshold} units. All inventory levels are healthy."
+        
+        output = []
+        output.append(f"Low Stock Report (Threshold: {threshold} units)")
+        output.append(f"{'=' * 60}")
+        output.append(f"Found {len(low_stock)} product(s) requiring attention")
+        output.append("")
+        
+        for item in low_stock:
+            qty = item['quantity']
+            urgency = "🔴 CRITICAL" if qty == 0 else "⚠️  WARNING" if qty < 5 else "⚡ LOW"
+            
+            output.append(f"{urgency} - {item['name']}")
+            output.append(f"  SKU: {item['sku']}")
+            output.append(f"  Current Stock: {qty} units")
+            output.append(f"  Price: ${float(item['price']):.2f}")
+            output.append(f"  Category: {item['category']}")
+            output.append(f"  Location: {item['location']}")
+            output.append("")
+        
+        return "\n".join(output)
+        
+    except Exception as e:
+        return f"Error retrieving low stock products: {str(e)}"
+
+
 def get_inventory_trends(days: int = 30) -> str:
     """
     Analyze inventory trends over a time period to identify fast and slow moving products.

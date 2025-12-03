@@ -138,11 +138,32 @@ async def handle_task(request: A2ARequest):
         )
         
         result_text = ""
+        event_count = 0
+        function_results = []
         async for event in events_async:
+            event_count += 1
+            print(f"[NOTIFICATION A2A] Event {event_count}: author={event.author if hasattr(event, 'author') else 'unknown'}")
             if event.content and event.content.parts:
                 for part in event.content.parts:
                     if part.text:
                         result_text += part.text
+                        print(f"[NOTIFICATION A2A] Added text: {part.text[:200]}...")
+                    elif hasattr(part, 'function_response') and part.function_response:
+                        print(f"[NOTIFICATION A2A] Function response detected: {part.function_response}")
+                        if hasattr(part.function_response, 'response'):
+                            func_result = str(part.function_response.response)
+                            function_results.append(func_result)
+                            print(f"[NOTIFICATION A2A] Function result: {func_result[:300]}...")
+                    elif hasattr(part, 'function_call') and part.function_call:
+                        print(f"[NOTIFICATION A2A] Function call detected: {part.function_call}")
+        
+        # If we have function results but no text, use the function results
+        if function_results and not result_text:
+            result_text = "\n\n".join(function_results)
+            print(f"[NOTIFICATION A2A] Using function results as response")
+        
+        print(f"[NOTIFICATION A2A] Final result_text length: {len(result_text)}")
+        print(f"[NOTIFICATION A2A] Final result_text: {result_text[:500]}...")
         
         return {
             "id": request.id,

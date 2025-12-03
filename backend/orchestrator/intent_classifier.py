@@ -35,14 +35,17 @@ Rules:
 - If user asks about inventory by name/SKU/category → use inventory_specialist
 - If user asks about PRICE filtering ("under $X", "over $Y", "between $A-$B") → use analytics_specialist
 - If user asks about policies/rules/compliance → use policy_expert
-- If user asks about trends/analysis/forecasts/reports/performance → use analytics_specialist
-- If user asks about orders/purchase/suppliers/reorder/procurement → use order_specialist
+- If user asks about policies/rules/compliance (EXCEPT supplier compliance) → use policy_expert
+- If user asks about orders/purchase/suppliers/reorder/procurement OR supplier compliance → use order_specialist
 - If user asks to draft/send/email/notify → use notification_specialist
 - If user asks multiple things (e.g., "analyze trends AND email results") → use multiple agents with coordination
+- If tasks are INDEPENDENT (e.g., "Stock of X and Policy for Y") → set "requires_coordination": false
 - Create targeted, specific prompts for each agent (don't pass the full user query if it contains tasks for other agents)
 
 CRITICAL: For ANY price-based filtering queries ("products under $50", "items over $100", "products between $20-$80"), 
 ALWAYS use analytics_specialist, NEVER inventory_specialist.
+
+CRITICAL: "Supplier compliance" queries MUST go to order_specialist, NOT policy_expert.
 
 USER REQUEST: {user_prompt}
 
@@ -89,7 +92,7 @@ Response:
     {{"agent_name": "policy_expert", "targeted_prompt": "What is the return policy for electronics?", "reason": "User needs policy information"}},
     {{"agent_name": "inventory_specialist", "targeted_prompt": "How many valves are in warehouse B?", "reason": "User needs inventory data"}}
   ],
-  "requires_coordination": true,
+  "requires_coordination": false,
   "user_intent_summary": "Get electronics return policy and valve inventory from warehouse B"
 }}
 
@@ -102,6 +105,16 @@ Response:
   ],
   "requires_coordination": true,
   "user_intent_summary": "Filter products by price (under $50) and send email notification"
+}}
+
+User: "Draft an email to orders@acme.com asking for a quote on 100 units of PUMP-001"
+Response:
+{{
+  "agents_needed": [
+    {{"agent_name": "notification_specialist", "targeted_prompt": "Draft an email to orders@acme.com asking for a quote on 100 units of PUMP-001", "reason": "User wants to compose an email requesting a quote"}}
+  ],
+  "requires_coordination": false,
+  "user_intent_summary": "Draft quote request email"
 }}
 
 Now classify this request and respond with ONLY the JSON object (no other text before or after):"""

@@ -116,6 +116,11 @@ async def handle_task(raw_request: Request):
             result_text = function_response_text
             print(f"[ORDERS A2A] Using function response as final output (length {len(result_text)})")
         
+        # Ensure we never return an empty string if we have a result
+        if not result_text:
+            result_text = "No information found."
+            print("[ORDERS A2A] Warning: Empty result text, using default message.")
+
         print(f"[ORDERS A2A] Total events: {event_count}, result length: {len(result_text)}")
         
         response = {

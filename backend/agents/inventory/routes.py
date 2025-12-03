@@ -88,10 +88,35 @@ async def handle_task(raw_request: Request):
         
         result_text = ""
         async for event in events_async:
-            if event.content and event.content.parts:
-                for part in event.content.parts:
+            print(f"[INVENTORY DEBUG] Event: type={type(event)}, author={event.author}")
+            if event.content:
+                parts = event.content.parts or []
+                print(f"[INVENTORY DEBUG] Content parts: {len(parts)}")
+                for part in parts:
+                    print(f"[INVENTORY DEBUG] Part: text={part.text[:50] if part.text else 'None'}, function_call={part.function_call is not None}")
+                    
+                    # Handle text parts
                     if part.text:
                         result_text += part.text
+                    
+                    # Handle function_response parts (tool outputs)
+                    # Sometimes the model returns the tool output as part of the event stream
+                    if hasattr(part, 'function_response') and part.function_response:
+                        print(f"[INVENTORY A2A] Found function_response: {type(part.function_response)}")
+                        try:
+                            # Extract response from function_response
+                            # It might be in 'response' dict or 'result' field
+                            response_data = part.function_response.response
+                            if response_data:
+                                if isinstance(response_data, dict) and 'result' in response_data:
+                                    result_text += str(response_data['result'])
+                                else:
+                                    result_text += str(response_data)
+                        except Exception as e:
+                            print(f"[INVENTORY A2A] Error parsing function_response: {e}")
+        
+        if not result_text:
+            print("[INVENTORY DEBUG] WARNING: Result text is empty!")
         
         response = {
             "id": request.id,

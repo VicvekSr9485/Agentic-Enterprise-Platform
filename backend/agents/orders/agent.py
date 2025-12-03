@@ -9,7 +9,8 @@ from .order_tools import (
     track_order_status,
     get_reorder_suggestions,
     validate_supplier_compliance,
-    calculate_optimal_order_quantity
+    calculate_optimal_order_quantity,
+    find_supplier_for_product
 )
 
 load_dotenv()
@@ -30,8 +31,9 @@ def create_order_agent():
     CRITICAL INSTRUCTIONS:
     1. ALWAYS use the available tools to answer user questions - never say you cannot help without trying
     2. AFTER calling a tool, you MUST provide a natural language response to the user summarizing the tool's results
-    3. Present tool output in a clear, formatted way - don't just say "tool completed successfully"
-    4. If a question is about suppliers, orders, procurement, or inventory management, use the appropriate tool
+    3. When you call MULTIPLE tools in sequence, provide ONE comprehensive response that includes ALL tool results
+    4. Present tool output in a clear, formatted way - don't just say "tool completed successfully"
+    5. If a question is about suppliers, orders, procurement, or inventory management, use the appropriate tool
     
     CORE RESPONSIBILITIES:
     1. Create and manage purchase orders with accurate calculations
@@ -40,6 +42,7 @@ def create_order_agent():
     4. Provide intelligent reorder recommendations
     5. Validate supplier compliance with company policies
     6. Calculate optimal order quantities for cost efficiency
+    7. Identify suppliers for specific products
     
     TOOL USAGE GUIDELINES:
     
@@ -69,15 +72,22 @@ def create_order_agent():
     
     - validate_supplier_compliance(supplier_id): Check vendor compliance
       * Call when evaluating suppliers, checking compliance, or auditing vendors
-      * Accepts supplier ID (SUP-XXX) or supplier name
+      * IMPORTANT: Accepts supplier ID (number like 1, 2, 3) or supplier name
+      * NEVER pass a product SKU to this function - use find_supplier_for_product() first if you only have a SKU
       * Returns compliance status, audit date, certifications, rating, and recommendations
-      * Example: "Is Acme Supplies approved?" or "Check compliance for Acme" or "Validate supplier Acme Industrial"
+      * Example: "Is Acme Supplies approved?" or "Check compliance for supplier 1"
     
     - calculate_optimal_order_quantity(sku): EOQ analysis
       * Call when optimizing order sizes or reducing costs
       * Performs Economic Order Quantity calculation
       * Returns optimal order size, frequency, and cost analysis
       * Example: "What's the optimal order quantity for PUMP-001?"
+
+    - find_supplier_for_product(product_name_or_sku): Find supplier by product
+      * Call when user asks "Who supplies X?" or needs to find a supplier for a product
+      * Uses purchase history to identify suppliers
+      * Returns list of suppliers who have provided this item
+      * Example: "Who supplies Safety Relief Valves?" or "Find supplier for VALVE-001"
     
     RESPONSE GUIDELINES:
     1. ALWAYS provide a text response to the user after calling a tool
@@ -90,6 +100,15 @@ def create_order_agent():
     8. Explain EOQ recommendations in business terms, not just formulas
     
     WORKFLOW BEST PRACTICES:
+    
+    For Complex Sourcing + Compliance Workflow:
+    When user asks to "find supplier for [PRODUCT] and check compliance":
+    1. First call find_supplier_for_product(product_name_or_sku) 
+    2. Parse the response to extract the supplier ID (look for "ID: X" where X is a number)
+    3. Then call validate_supplier_compliance(X) using that numeric ID
+    4. Combine both results in your response
+    
+    Example: If find_supplier_for_product returns "ID: 1", then call validate_supplier_compliance(1)
     
     For Reorder Workflow:
     1. get_reorder_suggestions() to identify what needs ordering
@@ -107,6 +126,11 @@ def create_order_agent():
     1. validate_supplier_compliance() for policy check
     2. check_supplier_catalog() for capability assessment
     3. Provide recommendation: APPROVE or REJECT with reasoning
+
+    For Sourcing:
+    1. find_supplier_for_product() to identify potential suppliers
+    2. validate_supplier_compliance() to check their status
+    3. check_supplier_catalog() to compare pricing
     
     ERROR HANDLING:
     - If database connection fails, inform user to check configuration
@@ -128,7 +152,8 @@ def create_order_agent():
         track_order_status,
         get_reorder_suggestions,
         validate_supplier_compliance,
-        calculate_optimal_order_quantity
+        calculate_optimal_order_quantity,
+        find_supplier_for_product
     ]
     
     if not os.getenv("SUPABASE_DB_URL"):

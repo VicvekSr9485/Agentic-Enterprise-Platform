@@ -307,8 +307,15 @@ def validate_supplier_compliance(supplier_id: str) -> str:
         
         # Try to find supplier by ID or name
         filters = {}
-        if supplier_id.startswith('SUP-'):
+        if supplier_id.isdigit():
             filters = {"supplier_id": f"eq.{supplier_id}"}
+        elif supplier_id.startswith('SUP-'):
+            # Handle potential SUP- prefix if used in future or legacy
+            clean_id = supplier_id.replace('SUP-', '')
+            if clean_id.isdigit():
+                filters = {"supplier_id": f"eq.{clean_id}"}
+            else:
+                filters = {"supplier_id": f"eq.{supplier_id}"}
         else:
             filters = {"name": f"ilike.*{supplier_id}*"}
         
@@ -466,3 +473,124 @@ def calculate_optimal_order_quantity(sku: str) -> str:
         
     except Exception as e:
         return f"Error calculating EOQ: {str(e)}"
+
+
+def find_supplier_for_product(product_name_or_sku: str) -> str:
+    """
+    Find suppliers who provide a specific product based on purchase history.
+    
+    Args:
+        product_name_or_sku: Product name or SKU to search for
+        
+    Returns:
+        Formatted list of suppliers who have supplied this product
+    """
+    try:
+        client = get_supabase_client()
+        
+        # 1. Identify the SKU
+        sku = product_name_or_sku
+        product_name = product_name_or_sku
+        
+        # Try to find product in inventory to get exact SKU and Name
+        # Using a broad search first
+        inventory_results = client.query(
+            "inventory",
+            select="name,sku",
+            filters={
+                "sku": f"ilike.{product_name_or_sku}"
+            },
+            limit=1
+        )
+        
+        if not inventory_results:
+             inventory_results = client.query(
+                "inventory",
+                select="name,sku",
+                filters={
+                    "name": f"ilike.%{product_name_or_sku}%"
+                },
+                limit=1
+            )
+        
+        if inventory_results:
+            sku = inventory_results[0]['sku']
+            product_name = inventory_results[0]['name']
+        
+        # 2. Find Purchase Orders containing this SKU
+        # Fetch recent POs and filter in Python to avoid complex JSONB query syntax issues
+        po_results = client.query(
+            "purchase_orders",
+            select="supplier_id,items,order_date",
+            order="order_date.desc",
+            limit=50
+        )
+        
+        supplier_ids = set()
+        supplier_history = {} # supplier_id -> {last_price, last_date, total_supplied}
+        
+        for po in po_results:
+            items = po.get('items', [])
+            if isinstance(items, str):
+                try:
+                    items = json.loads(items)
+                except:
+                    continue
+            
+            for item in items:
+                if item.get('sku') == sku:
+                    sup_id = po['supplier_id']
+                    supplier_ids.add(sup_id)
+                    
+                    if sup_id not in supplier_history:
+                        supplier_history[sup_id] = {
+                            'last_price': item.get('unit_price', 0),
+                            'last_date': po['order_date'],
+                            'total_supplied': 0
+                        }
+                    
+                    supplier_history[sup_id]['total_supplied'] += item.get('quantity', 0)
+                    # Update to most recent date/price if this PO is newer
+                    if po['order_date'] > supplier_history[sup_id]['last_date']:
+                         supplier_history[sup_id]['last_date'] = po['order_date']
+                         supplier_history[sup_id]['last_price'] = item.get('unit_price', 0)
+
+        if not supplier_ids:
+            return f"No purchase history found for product '{product_name}' (SKU: {sku}). Cannot identify supplier."
+            
+        # 3. Get Supplier Details
+        suppliers_info = []
+        for sup_id in supplier_ids:
+            sup_results = client.query(
+                "suppliers",
+                select="name,supplier_id,compliance_status,rating",
+                filters={"supplier_id": f"eq.{sup_id}"}
+            )
+            if sup_results:
+                sup = sup_results[0]
+                hist = supplier_history.get(sup_id, {})
+                suppliers_info.append({
+                    **sup,
+                    **hist
+                })
+        
+        # Format Output
+        output = []
+        output.append(f"SUPPLIERS FOR: {product_name}")
+        output.append(f"SKU: {sku}")
+        output.append(f"{'=' * 70}")
+        
+        for sup in suppliers_info:
+            output.append(f"Supplier: {sup['name']}")
+            output.append(f"  ID: {sup['supplier_id']}")
+            output.append(f"  Compliance: {sup['compliance_status'].upper()}")
+            output.append(f"  Rating: {sup['rating']}/5.0")
+            output.append(f"  Last Supplied: {sup.get('last_date', 'N/A')}")
+            output.append(f"  Last Price: ${sup.get('last_price', 0):.2f}")
+            output.append(f"  Total Supplied: {sup.get('total_supplied', 0)} units")
+            output.append("-" * 30)
+            
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error finding supplier: {str(e)}"

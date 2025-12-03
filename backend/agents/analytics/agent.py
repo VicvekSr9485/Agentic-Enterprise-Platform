@@ -4,6 +4,7 @@ from google.adk.sessions import InMemorySessionService
 from dotenv import load_dotenv
 
 from .analytics_tools import (
+    get_low_stock_items,
     get_inventory_trends,
     calculate_inventory_value,
     generate_sales_forecast,
@@ -38,6 +39,11 @@ def create_analytics_agent():
     7. Detect anomalies and unusual patterns in data
     
     TOOL USAGE GUIDELINES:
+    
+    - get_low_stock_items(threshold): Use to find products below stock threshold
+      * Call when user asks about "low stock", "running low", "need reordering"
+      * Default threshold is 20 units unless specified
+      * Returns urgent items first (out of stock, then critically low)
     
     - filter_products_by_price(min_price, max_price, category, sort_by): Use for price-based filtering
       * Call when user asks for products "under $X", "above $Y", "between $A and $B"
@@ -91,6 +97,7 @@ def create_analytics_agent():
     """
     
     tools = [
+        get_low_stock_items,
         filter_products_by_price,
         get_inventory_trends,
         calculate_inventory_value,

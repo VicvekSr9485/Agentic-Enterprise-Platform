@@ -87,11 +87,29 @@ async def handle_task(raw_request: Request):
         )
         
         result_text = ""
+        function_response_text = ""
+        event_count = 0
+        
         async for event in events_async:
+            event_count += 1
             if event.content and event.content.parts:
                 for part in event.content.parts:
-                    if part.text:
+                    if hasattr(part, 'text') and part.text:
                         result_text += part.text
+                    elif hasattr(part, 'function_response') and part.function_response:
+                        print(f"[ANALYTICS A2A] Found function_response")
+                        if hasattr(part.function_response, 'response'):
+                            function_response_text = str(part.function_response.response)
+                        elif hasattr(part.function_response, 'content'):
+                            function_response_text = str(part.function_response.content)
+        
+        if not result_text and function_response_text:
+            result_text = function_response_text
+            print(f"[ANALYTICS A2A] Using function response as final output")
+            
+        if not result_text:
+            result_text = "No analysis generated."
+            print("[ANALYTICS A2A] Warning: Empty result text")
         
         response = {
             "id": request.id,
