@@ -92,16 +92,23 @@ async def handle_task(raw_request: Request):
         
         async for event in events_async:
             event_count += 1
-            if event.content and event.content.parts:
-                for part in event.content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        result_text += part.text
-                    elif hasattr(part, 'function_response') and part.function_response:
-                        print(f"[ANALYTICS A2A] Found function_response")
-                        if hasattr(part.function_response, 'response'):
-                            function_response_text = str(part.function_response.response)
-                        elif hasattr(part.function_response, 'content'):
-                            function_response_text = str(part.function_response.content)
+            print(f"[ANALYTICS A2A] Event {event_count}: has_content={event.content is not None}")
+            if event.content:
+                print(f"[ANALYTICS A2A] Event {event_count}: parts_count={len(event.content.parts) if event.content.parts else 0}")
+                if event.content.parts:
+                    for i, part in enumerate(event.content.parts):
+                        print(f"[ANALYTICS A2A] Event {event_count} Part {i}: type={type(part).__name__}")
+                        if hasattr(part, 'text') and part.text:
+                            print(f"[ANALYTICS A2A] Event {event_count} Part {i}: has text, length={len(part.text)}")
+                            result_text += part.text
+                        elif hasattr(part, 'function_response') and part.function_response:
+                            print(f"[ANALYTICS A2A] Found function_response")
+                            if hasattr(part.function_response, 'response'):
+                                function_response_text = str(part.function_response.response)
+                            elif hasattr(part.function_response, 'content'):
+                                function_response_text = str(part.function_response.content)
+                        else:
+                            print(f"[ANALYTICS A2A] Event {event_count} Part {i}: no text or function_response, attributes={dir(part)}")
         
         if not result_text and function_response_text:
             result_text = function_response_text
