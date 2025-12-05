@@ -6,58 +6,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-class PolicySearchTool:
-    def __init__(self):
-        self.vx_client = vecs.create_client(os.getenv("SUPABASE_DB_URL"))
-        self.docs = self.vx_client.get_or_create_collection(
-            name="policy_documents", 
-            dimension=768
-        )
-        self.genai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-    
-    async def search_policy_documents(self, query: str) -> str:
-        """
-        Search policy documents using semantic vector search.
-        
-        Args:
-            query: The search query (e.g., "return policy for electronics")
-            
-        Returns:
-            str: Formatted policy documents with sources
-        """
-        try:
-            embedding = self.genai_client.models.embed_content(
-                model="text-embedding-004",
-                contents=query
-            ).embeddings[0].values
-            
-            results = self.docs.query(
-                data=embedding,
-                limit=3,
-                include_value=True,
-                include_metadata=True
-            )
-            
-            if not results:
-                return "No specific policies found in the database for this query."
-            
-            formatted_results = []
-            for result in results:
-                metadata = result[2]
-                content = metadata.get('content', '')
-                
-                formatted_results.append(
-                    f"**{metadata.get('title', 'Unknown Policy')}**\n"
-                    f"Source: {metadata.get('filename', 'N/A')}\n"
-                    f"Category: {metadata.get('category', 'N/A')}\n\n"
-                    f"{content}\n"
-                )
-            
-            return "\n---\n\n".join(formatted_results)
-            
-        except Exception as e:
-            return f"Error searching policies: {str(e)}"
-
 
 def search_policy_documents(query: str) -> str:
     """
@@ -75,18 +23,36 @@ def search_policy_documents(query: str) -> str:
     import os
     
     try:
-        vx_client = vecs.create_client(os.getenv("SUPABASE_DB_URL"))
+        # Validate environment variables
+        db_url = os.getenv("SUPABASE_DB_URL")
+        api_key = os.getenv("GOOGLE_API_KEY")
+        
+        if not db_url:
+            return "Policy search is temporarily unavailable. Database connection not configured."
+        
+        if not api_key:
+            return "Policy search is temporarily unavailable. API key not configured."
+        
+        # Connect to vector database
+        vx_client = vecs.create_client(db_url)
         docs = vx_client.get_or_create_collection(
             name="policy_documents", 
             dimension=768
         )
-        genai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         
-        embedding = genai_client.models.embed_content(
+        # Generate query embedding
+        genai_client = genai.Client(api_key=api_key)
+        embedding_response = genai_client.models.embed_content(
             model="text-embedding-004",
             contents=query
-        ).embeddings[0].values
+        )
         
+        if not embedding_response or not embedding_response.embeddings:
+            return "Unable to process search query. Please try rephrasing."
+        
+        embedding = embedding_response.embeddings[0].values
+        
+        # Perform vector search
         results = docs.query(
             data=embedding,
             limit=3,
@@ -95,21 +61,26 @@ def search_policy_documents(query: str) -> str:
         )
         
         if not results:
-            return "No specific policies found in the database for this query."
+            return "No policies found matching your query. Try using different keywords or ask about available policy categories."
         
+        # Format results
         formatted_results = []
         for result in results:
-            metadata = result[2]
-            content = metadata.get('content', '')
+            metadata = result[2] if len(result) > 2 else {}
+            content = metadata.get('content', 'No content available')
             
             formatted_results.append(
-                f"**{metadata.get('title', 'Unknown Policy')}**\n"
-                f"Source: {metadata.get('filename', 'N/A')}\n"
-                f"Category: {metadata.get('category', 'N/A')}\n\n"
+                f"**{metadata.get('title', 'Company Policy')}**\n"
+                f"Source: {metadata.get('filename', 'Internal Document')}\n"
+                f"Category: {metadata.get('category', 'General')}\n\n"
                 f"{content}\n"
             )
         
         return "\n---\n\n".join(formatted_results)
         
-    except Exception as e:
-        return f"Error searching policies: {str(e)}"
+    except ConnectionError:
+        return "Unable to connect to policy database. Please try again later."
+    except TimeoutError:
+        return "Policy search timed out. Please try again."
+    except Exception:
+        return "An error occurred while searching policies. Please contact support if this persists."
