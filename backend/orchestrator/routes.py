@@ -483,16 +483,21 @@ async def chat_endpoint(request: ChatRequest):
                     response_parts = [block.get('content', '') if isinstance(block, dict) else str(block) for block in data_blocks]
                     response_text = "\n\n".join(response_parts).strip() if data_blocks else f"Error: {e}"
             else:
+                print(f"[ORCHESTRATOR] No notification task, building response from {len(data_blocks)} data blocks")
                 if data_blocks:
                     response_parts = []
                     for block in data_blocks:
                         if isinstance(block, dict):
-                            response_parts.append(block.get('content', ''))
+                            content = block.get('content', '')
+                            print(f"[ORCHESTRATOR] Extracting content from block: {content[:100]}...")
+                            response_parts.append(content)
                         else:
                             response_parts.append(str(block))
                     response_text = "\n\n".join(response_parts).strip()
+                    print(f"[ORCHESTRATOR] Built response_text from data_blocks: {len(response_text)} chars")
                 else:
                     response_text = "No data available."
+                    print(f"[ORCHESTRATOR] No data blocks available")
             
             # Store conversation events in session for intelligent routing path
             # This ensures memory persistence even when bypassing Runner
@@ -597,6 +602,9 @@ async def chat_endpoint(request: ChatRequest):
                     draft_content=response_text,
                     metadata={"timestamp": event_count}
                 )
+        
+        print(f"[ORCHESTRATOR] Final response_text length: {len(response_text)}")
+        print(f"[ORCHESTRATOR] Final response_text preview: {response_text[:200]}...")
         
         return ChatResponse(
             response=response_text,
