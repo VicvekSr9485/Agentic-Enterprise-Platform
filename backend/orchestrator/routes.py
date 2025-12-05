@@ -474,10 +474,14 @@ async def chat_endpoint(request: ChatRequest):
                     if notif_result:
                         response_text = notif_result.strip()
                     else:
-                        response_text = "\n\n".join(data_blocks).strip() if data_blocks else "No response from notification agent."
+                        # Extract content from data_blocks dictionaries
+                        response_parts = [block.get('content', '') if isinstance(block, dict) else str(block) for block in data_blocks]
+                        response_text = "\n\n".join(response_parts).strip() if data_blocks else "No response from notification agent."
                 except Exception as e:
                     print(f"[ORCHESTRATOR] Error calling notification: {e}")
-                    response_text = "\n\n".join(data_blocks).strip() if data_blocks else f"Error: {e}"
+                    # Extract content from data_blocks dictionaries
+                    response_parts = [block.get('content', '') if isinstance(block, dict) else str(block) for block in data_blocks]
+                    response_text = "\n\n".join(response_parts).strip() if data_blocks else f"Error: {e}"
             else:
                 if data_blocks:
                     response_parts = []
