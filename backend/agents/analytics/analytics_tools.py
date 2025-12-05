@@ -24,14 +24,14 @@ def get_low_stock_items(threshold: int = 20) -> str:
         
         results = client.query(
             "inventory",
-            select="name,sku,quantity,category,location,price",
-            order="quantity.asc"
+            select="name,sku,stock_quantity,category,location,price",
+            order="stock_quantity.asc"
         )
         
         if not results:
             return "No inventory data available."
         
-        low_stock = [item for item in results if item['quantity'] <= threshold]
+        low_stock = [item for item in results if item['stock_quantity'] <= threshold]
         
         if not low_stock:
             return f"No products found with stock below {threshold} units. All inventory levels are healthy."
@@ -43,7 +43,7 @@ def get_low_stock_items(threshold: int = 20) -> str:
         output.append("")
         
         for item in low_stock:
-            qty = item['quantity']
+            qty = item['stock_quantity']
             urgency = "🔴 CRITICAL" if qty == 0 else "⚠️  WARNING" if qty < 5 else "⚡ LOW"
             
             output.append(f"{urgency} - {item['name']}")
@@ -57,7 +57,7 @@ def get_low_stock_items(threshold: int = 20) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error retrieving low stock products: {str(e)}"
+        return f"Error retrieving low stock products. Please check database connection."
 
 
 def get_inventory_trends(days: int = 30) -> str:
@@ -75,20 +75,20 @@ def get_inventory_trends(days: int = 30) -> str:
         
         results = client.query(
             "inventory",
-            select="name,sku,quantity,price,category",
-            order="quantity.desc"
+            select="name,sku,stock_quantity,price,category",
+            order="stock_quantity.desc"
         )
         
         if not results:
             return "No inventory data available for trend analysis."
         
         total_items = len(results)
-        quantities = [item['quantity'] for item in results]
+        quantities = [item['stock_quantity'] for item in results]
         avg_quantity = statistics.mean(quantities)
         median_quantity = statistics.median(quantities)
         
-        fast_movers = [item for item in results if item['quantity'] > avg_quantity * 1.5]
-        slow_movers = [item for item in results if item['quantity'] < avg_quantity * 0.3]
+        fast_movers = [item for item in results if item['stock_quantity'] > avg_quantity * 1.5]
+        slow_movers = [item for item in results if item['stock_quantity'] < avg_quantity * 0.3]
         
         output = []
         output.append(f"Inventory Trend Analysis (Last {days} days)")
@@ -102,19 +102,19 @@ def get_inventory_trends(days: int = 30) -> str:
             output.append(f"Fast Movers ({len(fast_movers)} products):")
             for item in fast_movers[:5]:
                 output.append(f"  - {item['name']} (SKU: {item['sku']})")
-                output.append(f"    Stock: {item['quantity']} units | Price: ${float(item['price']):.2f} | Category: {item['category']}")
+                output.append(f"    Stock: {item['stock_quantity']} units | Price: ${float(item['price']):.2f} | Category: {item['category']}")
             output.append("")
         
         if slow_movers:
             output.append(f"Slow Movers ({len(slow_movers)} products):")
             for item in slow_movers[:5]:
                 output.append(f"  - {item['name']} (SKU: {item['sku']})")
-                output.append(f"    Stock: {item['quantity']} units | Price: ${float(item['price']):.2f} | Category: {item['category']}")
+                output.append(f"    Stock: {item['stock_quantity']} units | Price: ${float(item['price']):.2f} | Category: {item['category']}")
         
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error analyzing trends: {str(e)}"
+        return f"Error analyzing trends. Please try again or contact support."
 
 
 def calculate_inventory_value(category: Optional[str] = None) -> str:
@@ -146,14 +146,14 @@ def calculate_inventory_value(category: Optional[str] = None) -> str:
             return f"No inventory found{f' in category {category}' if category else ''}."
         
         # Sort by value (quantity * price)
-        results.sort(key=lambda x: x['quantity'] * float(x['price']), reverse=True)
+        results.sort(key=lambda x: x['stock_quantity'] * float(x['price']), reverse=True)
         
         category_values = {}
         total_value = 0
         total_units = 0
         
         for item in results:
-            qty = item['quantity']
+            qty = item['stock_quantity']
             price = float(item['price'])
             cat = item['category']
             value = qty * price
@@ -185,15 +185,15 @@ def calculate_inventory_value(category: Optional[str] = None) -> str:
         if not category:
             output.append("Top 5 Most Valuable Items:")
             for item in results[:5]:
-                value = item['quantity'] * float(item['price'])
+                value = item['stock_quantity'] * float(item['price'])
                 output.append(f"  - {item['name']} (SKU: {item['sku']})")
-                output.append(f"    Value: ${value:,.2f} ({item['quantity']} units @ ${float(item['price']):.2f})")
+                output.append(f"    Value: ${value:,.2f} ({item['stock_quantity']} units @ ${float(item['price']):.2f})")
                 output.append(f"    Category: {item['category']} | Location: {item['location']}")
         
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error calculating inventory value: {str(e)}"
+        return f"Error calculating inventory value. Please try again or contact support."
 
 
 def generate_sales_forecast(product_sku: str, horizon_days: int = 90) -> str:
@@ -222,7 +222,7 @@ def generate_sales_forecast(product_sku: str, horizon_days: int = 90) -> str:
         item = results[0]
         name = item['name']
         sku = item['sku']
-        quantity = item['quantity']
+        quantity = item['stock_quantity']
         price = float(item['price'])
         category = item['category']
         
@@ -260,7 +260,7 @@ def generate_sales_forecast(product_sku: str, horizon_days: int = 90) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error generating forecast: {str(e)}"
+        return f"Error generating forecast. Please try again or contact support."
 
 
 def generate_performance_report(metric_type: str = "overview", date_range: int = 30) -> str:
@@ -286,11 +286,11 @@ def generate_performance_report(metric_type: str = "overview", date_range: int =
             return "No inventory data available for performance analysis."
         
         total_items = len(results)
-        total_value = sum(item['quantity'] * float(item['price']) for item in results)
-        total_units = sum(item['quantity'] for item in results)
+        total_value = sum(item['stock_quantity'] * float(item['price']) for item in results)
+        total_units = sum(item['stock_quantity'] for item in results)
         
-        low_stock = [item for item in results if item['quantity'] < 10]
-        out_of_stock = [item for item in results if item['quantity'] == 0]
+        low_stock = [item for item in results if item['stock_quantity'] < 10]
+        out_of_stock = [item for item in results if item['stock_quantity'] == 0]
         
         categories = {}
         for item in results:
@@ -298,7 +298,7 @@ def generate_performance_report(metric_type: str = "overview", date_range: int =
             if cat not in categories:
                 categories[cat] = {"count": 0, "value": 0}
             categories[cat]["count"] += 1
-            categories[cat]["value"] += item['quantity'] * float(item['price'])
+            categories[cat]["value"] += item['stock_quantity'] * float(item['price'])
         
         output = []
         output.append(f"Performance Report - {metric_type.upper()}")
@@ -329,12 +329,12 @@ def generate_performance_report(metric_type: str = "overview", date_range: int =
             output.append("Action Items:")
             output.append(f"  {len(low_stock)} product(s) need reordering")
             for item in low_stock[:3]:
-                output.append(f"    - {item['name']} (SKU: {item['sku']}): {item['quantity']} units remaining")
+                output.append(f"    - {item['name']} (SKU: {item['sku']}): {item['stock_quantity']} units remaining")
         
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error generating report: {str(e)}"
+        return f"Error generating report. Please try again or contact support."
 
 
 def compare_categories(category_a: str, category_b: str) -> str:
@@ -367,8 +367,8 @@ def compare_categories(category_a: str, category_b: str) -> str:
             if cat not in data:
                 data[cat] = {"count": 0, "units": 0, "value": 0, "prices": []}
             data[cat]["count"] += 1
-            data[cat]["units"] += item['quantity']
-            data[cat]["value"] += item['quantity'] * float(item['price'])
+            data[cat]["units"] += item['stock_quantity']
+            data[cat]["value"] += item['stock_quantity'] * float(item['price'])
             data[cat]["prices"].append(float(item['price']))
         
         # Calculate averages
@@ -420,7 +420,7 @@ def compare_categories(category_a: str, category_b: str) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error comparing categories: {str(e)}"
+        return f"Error comparing categories. Please try again or contact support."
 
 
 def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
@@ -444,7 +444,7 @@ def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
         if not results:
             return "No inventory data available for anomaly detection."
         
-        quantities = [item['quantity'] for item in results]
+        quantities = [item['stock_quantity'] for item in results]
         prices = [float(item['price']) for item in results]
         
         avg_qty = statistics.mean(quantities)
@@ -456,7 +456,7 @@ def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
         anomalies = []
         
         for item in results:
-            qty = item['quantity']
+            qty = item['stock_quantity']
             price = float(item['price'])
             
             if stdev_qty > 0 and abs(qty - avg_qty) > 2 * stdev_qty:
@@ -507,7 +507,7 @@ def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error detecting anomalies: {str(e)}"
+        return f"Error detecting anomalies. Please try again or contact support."
 
 
 def filter_products_by_price(min_price: Optional[float] = None, max_price: Optional[float] = None, 
@@ -534,7 +534,7 @@ def filter_products_by_price(min_price: Optional[float] = None, max_price: Optio
         
         results = client.query(
             "inventory",
-            select="name,sku,quantity,price,category,location",
+            select="name,sku,stock_quantity,price,category,location",
             filters=filters if filters else None
         )
         
@@ -569,11 +569,11 @@ def filter_products_by_price(min_price: Optional[float] = None, max_price: Optio
         elif sort_by == "name":
             filtered.sort(key=lambda x: x['name'])
         elif sort_by == "stock":
-            filtered.sort(key=lambda x: x['quantity'], reverse=True)
+            filtered.sort(key=lambda x: x['stock_quantity'], reverse=True)
         
         # Calculate summary stats
-        total_value = sum(item['quantity'] * float(item['price']) for item in filtered)
-        total_units = sum(item['quantity'] for item in filtered)
+        total_value = sum(item['stock_quantity'] * float(item['price']) for item in filtered)
+        total_units = sum(item['stock_quantity'] for item in filtered)
         avg_price = sum(float(item['price']) for item in filtered) / len(filtered)
         
         output = []
@@ -598,7 +598,7 @@ def filter_products_by_price(min_price: Optional[float] = None, max_price: Optio
         output.append("Product Details:")
         for item in filtered:
             price = float(item['price'])
-            qty = item['quantity']
+            qty = item['stock_quantity']
             value = price * qty
             output.append(f"  • {item['name']}")
             output.append(f"    SKU: {item['sku']} | Price: ${price:.2f} | Stock: {qty} units")
@@ -609,4 +609,4 @@ def filter_products_by_price(min_price: Optional[float] = None, max_price: Optio
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error filtering products by price: {str(e)}"
+        return f"Error filtering products by price. Please try again or contact support."
