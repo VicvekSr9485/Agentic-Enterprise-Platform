@@ -314,10 +314,18 @@ async def chat_endpoint(request: ChatRequest):
                     return f"Error from agent: {error_msg}"
 
                 try:
-                    parts = data.get("result", {}).get("parts", [])
+                    print(f"[ORCHESTRATOR] Response data keys: {data.keys()}")
+                    result = data.get("result", {})
+                    print(f"[ORCHESTRATOR] Result keys: {result.keys() if result else 'None'}")
+                    parts = result.get("parts", [])
+                    print(f"[ORCHESTRATOR] Found {len(parts)} parts")
                     texts = [p.get("text", "") for p in parts if p.get("kind") == "text"]
-                    return _sanitize("\n".join(t for t in texts if t))
-                except Exception:
+                    print(f"[ORCHESTRATOR] Extracted {len(texts)} text parts")
+                    final_text = "\n".join(t for t in texts if t)
+                    print(f"[ORCHESTRATOR] Final text length: {len(final_text)}")
+                    return _sanitize(final_text)
+                except Exception as e:
+                    print(f"[ORCHESTRATOR] Error extracting text: {e}")
                     return _sanitize(json.dumps(data))
 
         used_intelligent_routing = False
