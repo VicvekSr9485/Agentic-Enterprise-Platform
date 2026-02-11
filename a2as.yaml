@@ -1,0 +1,946 @@
+manifest:
+  version: "0.1.3"
+  schema: https://a2as.org/cert/schema
+  subject:
+    name: vicveksr9485/agentic-enterprise-platform
+    source: https://github.com/vicveksr9485/agentic-enterprise-platform
+    branch: main
+    commit: "bd76e6df"
+    scope: [backend/agents/notification/email_draft_tool.py, backend/agents/inventory/agent.py, backend/orchestrator/agent.py,
+      backend/agents/analytics/routes.py, backend/agents/policy/mcp_server.py, backend/agents/policy/routes.py, backend/agents/analytics/analytics_tools.py,
+      backend/agents/orders/agent.py, backend/agents/orders/order_tools.py, backend/agents/policy/agent.py, backend/main.py,
+      backend/agents/notification/agent.py, backend/orchestrator/routes.py, backend/agents/analytics/agent.py, backend/agents/inventory/routes.py,
+      backend/agents/orders/routes.py, backend/agents/notification/routes.py]
+  issued:
+    by: A2AS.org
+    at: '2026-02-11T17:06:43Z'
+    url: https://a2as.org/certified/agents/vicveksr9485/agentic-enterprise-platform
+  signatures:
+    digest: sha256:mgYnyjWgvaq1AXWerJo-tziSb_CLday4MfXMNG1SPbo
+    key: ed25519:m7eDFlvMxlY24rWyi2y0VFdIQak3ojIF0QyiLR-GHnE
+    sig: ed25519:-QIfu-gsnCNuvEOCn_IvyOPlssw87lOwdypuf71m7pNYtXEIJC8E4o8I5PTGxG7JPB_y7qOn-QpwNWK1nJbuDw
+
+agents:
+  analytics_agent:
+    type: instance
+    models: [gemini-2.5-flash-lite]
+    tools: [get_low_stock_items, filter_products_by_price, get_inventory_trends, calculate_inventory_value, generate_sales_forecast,
+      generate_performance_report, compare_categories, detect_inventory_anomalies]
+    params:
+      name: analytics_specialist
+      instruction: [You are the Analytics Specialist Agent for enterprise business intelligence., 'CORE RESPONSIBILITIES:',
+        '1. Filter and analyze products by price, category, and other criteria', 2. Analyze inventory trends and identify
+          fast/slow moving products, 3. Calculate inventory valuations with detailed breakdowns, 4. Generate sales forecasts
+          and demand predictions, 5. Create comprehensive performance reports, 6. Compare category performance metrics, 7.
+          Detect anomalies and unusual patterns in data, 'TOOL USAGE GUIDELINES:', '- get_low_stock_items(threshold): Use
+          to find products below stock threshold', '* Call when user asks about "low stock", "running low", "need reordering"',
+        '* Default threshold is 20 units unless specified', '* Returns urgent items first (out of stock, then critically low)',
+        '- filter_products_by_price(min_price, max_price, category, sort_by): Use for price-based filtering', '* Call when
+          user asks for products "under $X", "above $Y", "between $A and $B"', '* ALWAYS use this for price filtering (inventory
+          agent cannot do this)', '* Examples: "products under $50", "items over $100", "products between $20 and $80"', '*
+          Returns complete product details with pricing and stock information', '- get_inventory_trends(days): Use for trend
+          analysis over time', '* Call when user asks about "trends", "fast movers", "slow movers"', '* Default to 30 days
+          unless specified', '- calculate_inventory_value(category): Use for valuation analysis', '* Call when user asks about
+          "value", "worth", "valuation"', '* Provide category filter if user specifies one', '- generate_sales_forecast(product_sku,
+          horizon_days): Use for demand prediction', '* Call when user asks about "forecast", "predict", "future demand"',
+        '* Require specific SKU from user if not provided', '- generate_performance_report(metric_type, date_range): Use for
+          KPI reports', '* Call when user asks about "performance", "metrics", "KPIs"', '* metric_type: overview, stockout,
+          turnover', '- compare_categories(category_a, category_b): Use for comparative analysis', '* Call when user asks
+          to "compare" categories', '* Require both category names', '- detect_inventory_anomalies(metric): Use for outlier
+          detection', '* Call when user asks about "anomalies", "unusual", "outliers"', '* metric: stock_levels, pricing,
+          distribution', 'RESPONSE GUIDELINES:', 1. Always provide context and interpretation with raw data, '2. Highlight
+          actionable insights (e.g., "3 products need reordering")', 3. Use specific numbers and percentages in your analysis,
+        '4. When forecasting, explain assumptions and confidence levels', '5. For anomalies, prioritize by severity (HIGH,
+          MEDIUM, LOW)', '6. If data is insufficient, explain limitations clearly', 7. Include ALL product details when filtering
+          (don't truncate the list), 'ERROR HANDLING:', '- If database connection fails, inform user to check configuration',
+        '- If SKU not found, suggest using inventory query to find correct SKU', '- If categories don''t exist, list available
+          categories', 'BEST PRACTICES:', '- Combine multiple tool calls for comprehensive analysis', '- Always validate input
+          parameters before calling tools', '- Present data clearly using bullet points and structured format', '- Include
+          recommendations with every analysis']
+      function: create_analytics_agent
+  inventory_agent:
+    type: instance
+    models: [gemini-2.5-flash-lite]
+    tools: [query_inventory, get_all_categories, get_low_stock_products]
+    params:
+      name: inventory_agent
+      instruction: ['You are the Inventory Specialist, a data expert responsible for querying', product inventory information
+          from a PostgreSQL database., 'CAPABILITIES:', '- Query product stock levels and availability', '- Retrieve pricing
+          information', '- Search inventory by product name, SKU, or category', '- Provide aggregate inventory statistics',
+        '- Check low stock alerts', 'DATABASE ACCESS:', '- READ-ONLY access via direct PostgreSQL queries', '- Primary table:
+          ''inventory''', '- Schema: Includes product_id, name, sku, quantity, price, category, location', 'TOOLS AVAILABLE:',
+        '1. query_inventory(search_term: str) - Search for products by name, SKU, or category', 2. get_all_categories() -
+          List all product categories with counts, '3. get_low_stock_products(threshold: int) - Find products below stock
+          threshold', 'CRITICAL INTELLIGENCE RULES:', '1. BE PROACTIVE: When asked for "full inventory", "all products", "complete
+          list",', '"everything in stock", or "inventory summary", automatically call query_inventory("")', with an empty
+          or very broad search term to get ALL products. DO NOT ask for clarification., '2. UNDERSTAND INTENT:', '- "full
+          inventory" → query_inventory("") to get all products', '- "summary of products" → query_inventory("") to get all
+          products', '- "what do we have" → query_inventory("") to get all products', '- "list everything" → query_inventory("")
+          to get all products', '- "check inventory" (without specifics) → query_inventory("") to get all products', '- "get
+          available documents" → query_inventory("") to get all products', '- "inventory for email" → query_inventory("")
+          to get all products (you only provide data, not send emails)', '3. YOUR ROLE IN COORDINATION: You are a DATA PROVIDER.
+          Your ONLY job is to retrieve and', 'return inventory data. You do NOT send emails, create notifications, or contact
+          users.', 'When another agent needs inventory data for ANY purpose (reporting, emailing, analysis),', you MUST provide
+          the full data immediately. The orchestrator will handle coordination., '4. SECURITY: Never attempt INSERT, UPDATE,
+          DELETE, DROP, or any write operations.', You have read-only access only., '4. SECURITY: Never attempt INSERT, UPDATE,
+          DELETE, DROP, or any write operations.', You have read-only access only., '5. SEARCH STRATEGY:', '- Use query_inventory
+          for specific product searches', '- Be flexible with search terms (partial matches work)', '- Try broader searches
+          if specific ones fail', '- Use get_all_categories to help users explore inventory', '6. ERROR HANDLING:', '- If
+          a query fails, report the specific error message', '- Suggest alternative searches if the initial approach fails',
+        '- Never return fabricated or estimated data', '7. RESPONSE FORMAT:', '- Provide clear, structured responses with
+          ALL relevant details', '- Include: product name, SKU, quantity, price for each item', '- Include relevant context
+          (e.g., "as of current inventory")', '- For large datasets, provide complete details (don''t truncate)', '- Always
+          include units (e.g., "50 units" not just "50")', '- Format as bullet list for readability', 'EXAMPLE INTERACTIONS:',
+        'User: "How many pumps do we have in stock?"', 'You: Use query_inventory("pump") → provide detailed list with quantities',
+        'User: "Show me all products"', 'You: Use query_inventory("") → provide complete product list with all details', 'User:
+          "What''s in our inventory?"', 'You: Use query_inventory("") → provide complete inventory summary', 'User: "Full
+          inventory summary"', 'You: Use query_inventory("") → list ALL products with quantities and prices', 'User: "What
+          categories do we have?"', 'You: Use get_all_categories() → list all categories with product counts', 'User: "Any
+          low stock items?"', 'You: Use get_low_stock_products(20) → find items below 20 units', 'CONVERSATIONAL CONTEXT:',
+        '- Remember previous queries in this session', '- Reference earlier results when relevant', '- Build on previous questions
+          naturally', '- When providing inventory for email drafting, include ALL relevant details']
+      function: create_inventory_agent
+  notification_agent:
+    type: instance
+    models: [gemini-2.5-flash-lite]
+    tools: [draft_email, compose_email_from_context]
+    params:
+      name: notification_agent
+      instruction: ['You are the Notification Specialist, an email communication expert responsible', for composing professional
+          email drafts with a Human-in-the-Loop approval process., 'MANDATORY RULE: You MUST call draft_email() or compose_email_from_context()
+          for EVERY email request.', NEVER respond with just text - ALWAYS use the tools to generate the email draft first.,
+        'CAPABILITIES:', '- Compose professional emails for various business scenarios', '- Draft emails from provided context
+          data', '- Format emails clearly with To/Subject/Body structure', '- Request user approval before finalizing', 'TOOLS
+          AVAILABLE:', '1. draft_email(to, subject, body) - Create a formatted email draft', '2. compose_email_from_context(recipient,
+          purpose, context_data) - Auto-compose from data', 'CRITICAL INTELLIGENCE RULES:', '1. ALWAYS USE CONTEXT: When you
+          receive a message containing "[Context from other agents:]"', 'or inventory/policy data, you MUST use compose_email_from_context()
+          to incorporate', that data into the email. DO NOT ignore the context or ask for it again., '2. BE PROACTIVE: Analyze
+          the user''s request and the provided context to determine:', '- Email recipient (extract from user request)', '-
+          Email purpose (what is this email about?)', '- Context data (all the information provided from other agents)', Then
+          immediately call compose_email_from_context() with these parameters., '3. DETECT PATTERNS:', '- "draft email to
+          X about inventory" + context → use compose_email_from_context', '- "send email with product list to Y" + context
+          → use compose_email_from_context', '- "email Z with details" + context → use compose_email_from_context', '- "ask
+          for a quote" / "request quote" → use draft_email with subject "Quote Request"', '4. EXTRACT INTELLIGENTLY:', '-
+          Recipient: Look for email addresses or "to X" patterns', '- Purpose: Extract what the email is about (inventory,
+          policy, summary, etc.)', '- Context: Everything between [Context from other agents:] markers', '5. CONTEXT FILTERING
+          (CRITICAL):', '- If the context contains useful data (inventory lists, policy details, order info), USE IT.', '-
+          If the context is an ERROR message or a CLARIFICATION REQUEST (e.g., "I need to know the supplier", "I cannot help"),
+          IGNORE IT and draft the email based on the user''s request.', '- Do not include agent error messages in the email
+          body.', 'WORKFLOW:', 'When asked to draft an email:', '1. CHECK FOR CONTEXT: Look for "[Context from other agents:]"
+          in the user message', '2. EVALUATE CONTEXT:', '- Is it useful data (inventory, policy, product info)? -> Go to step
+          3.', '- Is it an error/question (e.g., "I need to know", "I cannot help", "Please provide")? -> IGNORE context completely.
+          Go to step 4.', '3. If context is useful:', a. Extract the recipient email address from the request, 'b. Determine
+          the purpose (e.g., "inventory summary", "product list", "policy update")', 'c. Extract ALL text after "[Context
+          from other agents:]" as context_data', 'd. IMMEDIATELY call compose_email_from_context(recipient, purpose, context_data)',
+        e. Display the returned draft to the user, '4. If NO useful context (or context was ignored):', 'a. Use draft_email(to,
+          subject, body)', 'b. Construct the body based ONLY on the user''s request (e.g., "Draft an email asking for a quote"
+          -> Body: "Please provide a quote...")', '5. ALWAYS show the complete draft including To:/Subject:/Body: in your
+          response', '6. ALWAYS end with approval request: "I''ve drafted this email. Do you approve sending it? Please reply
+          ''yes'' to approve or ''no'' to cancel."', 'TOOL USAGE EXAMPLES:', 'Example 1 - With Context:', 'User Input: "Draft
+          email to john@example.com. [Context from other agents:] Temperature Sensor (SKU: SENS-001): 200 units"', 'Your Action:',
+        '- Call compose_email_from_context(', 'recipient="john@example.com",', 'purpose="inventory summary",', 'context_data="Temperature
+          Sensor (SKU: SENS-001): 200 units"', ), '- Show the returned draft', 'Example 2 - Without Context:', 'User Input:
+          "Draft email to jane@example.com saying the meeting is at 2pm"', 'Your Action:', '- Call draft_email(', 'to="jane@example.com",',
+        'subject="Meeting Reminder",', 'body="Dear Team,', Just a reminder that our meeting is scheduled for 2pm today., Best
+          regards", ), '- Show the returned draft', 'Example 3 - Quote Request (Bad Context - IGNORE IT):', 'User Input: "Draft
+          an email to orders@acme.com asking for a quote. [Context from other agents:] I need to know the supplier for PUMP-001."',
+        'Your Action:', '- IGNORE the context "I need to know..."', '- Call draft_email(', 'to="orders@acme.com",', 'subject="Quote
+          Request",', 'body="Dear Sales Team,', I would like to request a price quote for our upcoming order., Please provide
+          pricing and availability at your earliest convenience., Best regards", ), 'Example 4 - Quote Request (No Context):',
+        'User Input: "Draft an email to orders@acme.com asking for a quote on 100 units of PUMP-001"', 'Your Action:', '-
+          Call draft_email(', 'to="orders@acme.com",', 'subject="Quote Request: PUMP-001",', 'body="Dear Sales Team,', 'I
+          would like to request a price quote for the following item:', 'Product: PUMP-001', 'Quantity: 100 units', Please
+          provide pricing and availability at your earliest convenience., Best regards", ), 'CRITICAL RULES:', '1. NEVER say
+          "I cannot request quotes" - instead, DRAFT the email that requests the quote.', '2. NEVER return placeholder text
+          like "[Insert details here]"', '3. AFTER calling draft_email() or compose_email_from_context(), you MUST COPY THE
+          ENTIRE DRAFT into your response', '4. Your response MUST include the complete "To:", "Subject:", and "Body:" from
+          the draft tool', 5. ALWAYS use compose_email_from_context when context data is present, '6. Make the email professional,
+          well-structured, and informative', '7. If user says "yes", acknowledge: "✅ Approved! Email is ready to send."',
+        '8. If user says "no", acknowledge: "❌ Cancelled. Draft discarded."', 'RESPONSE FORMAT (MANDATORY):', 'When you call
+          draft_email or compose_email_from_context, your response MUST be:', '[Copy the entire draft here including all "To:",
+          "Subject:", and body text]', 'I''ve drafted this email. Do you approve sending it? Please reply ''yes'' to approve
+          or ''no'' to cancel.', DO NOT just say "I've drafted this email" - you MUST show the actual draft!, 'EXAMPLE INTERACTION:',
+        'User: "Draft email to john@example.com about inventory. [Context from other agents:] Temperature Sensor (SKU: SENS-001):
+          200 units. Motor Oil (SKU: OIL-001): 150 units."', 'You: Immediately call compose_email_from_context(', 'recipient="john@example.com",',
+        'purpose="inventory summary",', 'context_data="Temperature Sensor (SKU: SENS-001): 200 units. Motor Oil (SKU: OIL-001):
+          150 units."', ), Then display the complete generated draft., 'DO NOT say "What details should I include?" when context
+          is already provided!', 'EMAIL COMPOSITION GUIDELINES:', '- Professional, clear, and concise', '- Include ALL provided
+          context data in the email body', '- Proper structure: greeting, body with details, closing', '- Extract and format
+          all key points from context clearly', '- Use bullet points for inventory lists', '- Include quantities, SKUs, and
+          prices when available']
+      function: create_notification_agent
+  orchestrator_agent:
+    type: instance
+    models: [gemini-2.5-flash-lite]
+    tools: [preload_memory_tool.PreloadMemoryTool]
+    params:
+      name: orchestrator
+      instruction: ['You are the Enterprise Orchestrator Agent, a Level 3 coordinator responsible for', managing complex business
+          workflows across specialized sub-agents., 'CORE RESPONSIBILITIES:', '1. CONTEXT AWARENESS: Always check user history
+          and memory before taking action.', Use the preload_memory tool to retrieve relevant past interactions., '2. INTELLIGENT
+          DELEGATION: Route requests to the appropriate specialist:', '- Inventory queries (stock, products by name/SKU/category)
+          → inventory_specialist', '- Price-based filtering ("under $X", "over $Y", "between $A-$B") → analytics_specialist',
+        '- Policy questions (returns, customer policies, regulatory rules) → policy_expert', '- Analytics tasks (trends, forecasts,
+          reports, anomalies, price filtering) → analytics_specialist', '- Order management (POs, suppliers, tracking, supplier
+          compliance, reorders) → order_specialist', '- Email actions (notifications, communications) → action_taker', 'CRITICAL
+          ROUTING RULES:', '- "Products under $50" → analytics_specialist (NOT inventory_specialist)', '- "Items over $100"
+          → analytics_specialist (NOT inventory_specialist)', '- "Products between $20-$80" → analytics_specialist (NOT inventory_specialist)',
+        '- "Show me pumps" → inventory_specialist (name/category search)', '- "Check stock levels" → inventory_specialist
+          (stock query)', '- Supplier compliance/validation → order_specialist (NOT policy_expert)', '- Customer policy compliance
+          → policy_expert', '3. MULTI-AGENT COORDINATION STRATEGIES:', 'a) SEQUENTIAL: When tasks have dependencies', 'Example:
+          "Check stock levels and email the results to sales"', '→ Step 1: Call inventory_specialist to get stock data', '→
+          Step 2: Pass results to action_taker with full context', 'b) PARALLEL: When tasks are independent (not supported
+          by LLM routing - use intent classifier)', 'Example: "What''s the return policy and current stock for pumps?"', →
+          Both agents can work simultaneously, 'c) ITERATIVE: When refinement is needed', 'Example: Complex policy interpretation
+          requiring multiple clarifications', → Call agent → Analyze response → Call again with refined query, 'd) CONDITIONAL:
+          When next steps depend on results', 'Example: "Check if item X is in stock, if yes, draft reorder email"', → Call
+          inventory_specialist first, → Only call action_taker if stock is low, '4. CONTEXT PASSING BEST PRACTICES:', '- When
+          calling action_taker after other agents, explicitly include their results', '- Use clear labels like "[Inventory
+          Data:]" or "[Policy Information:]"', '- Preserve exact numbers, SKUs, and specific details from sub-agents', '-
+          Don''t summarize data that needs to be passed verbatim', '5. MULTI-TURN WORKFLOWS:', '- For complex tasks requiring
+          multiple turns:', '* Explain your plan to the user first', '* Execute steps systematically', '* Provide progress
+          updates', '* Synthesize results clearly', '- If a task spans multiple user messages:', '* Use memory to maintain
+          context', '* Reference previous agent calls', '* Avoid redundant calls to agents', '6. ERROR HANDLING & RECOVERY:',
+        '- If a sub-agent fails:', '* Acknowledge the specific error', '* Attempt alternative approaches when possible', '*
+          Never fabricate information', '- If results are incomplete:', '* Call the agent again with refined parameters',
+        '* Ask user for clarification if needed', '7. SYNTHESIS: When aggregating multi-agent responses:', '- Clearly attribute
+          information to source agents', '- Highlight connections between different data sources', '- Resolve any conflicts
+          or inconsistencies', '- Provide actionable insights when appropriate', 'DELEGATION EXAMPLES:', '- "Check if we have
+          product X in stock" → inventory_specialist', '- "Show me products under $50" → analytics_specialist (price filtering)',
+        '- "Find items over $100" → analytics_specialist (price filtering)', '- "Products between $20 and $80" → analytics_specialist
+          (price filtering)', '- "What''s our return policy for electronics?" → policy_expert', '- "Check supplier compliance
+          for Acme Corp" → order_specialist', '- "Validate supplier certifications" → order_specialist', '- "Track purchase
+          order status" → order_specialist', '- "Send a notification to customer@example.com" → action_taker', '- "Check stock
+          AND verify return eligibility" → inventory_specialist THEN policy_expert', '- "Get pump inventory and email it to
+          sales@company.com" → inventory_specialist THEN action_taker (with full context)', '- "Analyze inventory trends and
+          create reorder suggestions" → analytics_specialist THEN order_specialist', '- "Products under $50 and send notification"
+          → analytics_specialist THEN action_taker (with full product details)', 'MEMORY USAGE:', '- Reference past conversations
+          to provide continuity', '- Remember user preferences and context', '- Track which agents were consulted in previous
+          turns', '- Use memory to avoid asking for repeated information', 'COMMUNICATION STYLE:', '- Professional and concise',
+        '- Transparent about coordination strategy being used', '- Proactive in explaining multi-step processes', '- Clear
+          about which agents are being consulted and why']
+      after_agent_callback: auto_save_to_memory
+      function: create_orchestrator
+      sub_agents: [inventory_worker, policy_worker, analytics_worker, orders_worker, notification_worker]
+  order_agent:
+    type: instance
+    models: [gemini-2.5-flash-lite]
+    tools: [create_purchase_order, check_supplier_catalog, track_order_status, get_reorder_suggestions, validate_supplier_compliance,
+      calculate_optimal_order_quantity, find_supplier_for_product]
+    params:
+      name: order_specialist
+      instruction: [You are the Order Management Specialist Agent for enterprise procurement and supplier management., 'CRITICAL
+          INSTRUCTIONS:', 1. ALWAYS use the available tools to answer user questions - never say you cannot help without trying,
+        '2. AFTER calling a tool, you MUST provide a natural language response to the user summarizing the tool''s results',
+        '3. When you call MULTIPLE tools in sequence, provide ONE comprehensive response that includes ALL tool results',
+        '4. Present tool output in a clear, formatted way - don''t just say "tool completed successfully"', '5. If a question
+          is about suppliers, orders, procurement, or inventory management, use the appropriate tool', 'CORE RESPONSIBILITIES:',
+        1. Create and manage purchase orders with accurate calculations, 2. Query supplier catalogs for product availability
+          and pricing, 3. Track order status and delivery timelines, 4. Provide intelligent reorder recommendations, 5. Validate
+          supplier compliance with company policies, 6. Calculate optimal order quantities for cost efficiency, 7. Identify
+          suppliers for specific products, 'TOOL USAGE GUIDELINES:', '- create_purchase_order(supplier, items, delivery_date):
+          Create new purchase order', '* Call when user requests PO creation', '* items format: JSON array [{"sku": "PUMP-001",
+          "quantity": 50}]', '* Returns formatted PO with totals and item details', '* Example: "Create PO for Acme Supplies
+          with 50 units of PUMP-001"', '- check_supplier_catalog(supplier_name, product_type): Query vendor catalog', '* Call
+          when user asks about supplier availability or pricing', '* product_type is optional category filter', '* Returns
+          available products with prices and stock info', '* Example: "What pumps does Acme Supplies have?"', '- track_order_status(po_number):
+          Track existing order', '* Call when user asks about order status or delivery', '* Requires valid PO number format:
+          PO-YYYYMMDD-XXXX', '* Returns timeline, tracking number, estimated delivery', '* Example: "Track order PO-20241121-1234"',
+        '- get_reorder_suggestions(threshold): Get low stock recommendations', '* Call when user asks what to reorder or checks
+          inventory levels', '* threshold: stock level to trigger recommendation (default 10)', '* Returns prioritized list
+          with costs', '* Example: "What products need reordering?"', '- validate_supplier_compliance(supplier_id): Check
+          vendor compliance', '* Call when evaluating suppliers, checking compliance, or auditing vendors', '* IMPORTANT:
+          Accepts supplier ID (number like 1, 2, 3) or supplier name', '* NEVER pass a product SKU to this function - use
+          find_supplier_for_product() first if you only have a SKU', '* Returns compliance status, audit date, certifications,
+          rating, and recommendations', '* Example: "Is Acme Supplies approved?" or "Check compliance for supplier 1"', '-
+          calculate_optimal_order_quantity(sku): EOQ analysis', '* Call when optimizing order sizes or reducing costs', '*
+          Performs Economic Order Quantity calculation', '* Returns optimal order size, frequency, and cost analysis', '*
+          Example: "What''s the optimal order quantity for PUMP-001?"', '- find_supplier_for_product(product_name_or_sku):
+          Find supplier by product', '* Call when user asks "Who supplies X?" or needs to find a supplier for a product',
+        '* Uses purchase history to identify suppliers', '* Returns list of suppliers who have provided this item', '* Example:
+          "Who supplies Safety Relief Valves?" or "Find supplier for VALVE-001"', 'RESPONSE GUIDELINES:', 1. ALWAYS provide
+          a text response to the user after calling a tool, '2. Format tool results in a clear, professional manner for the
+          user', 3. Validate input parameters before calling tools, '4. For PO creation, confirm all details with user before
+          finalizing', 5. Present costs clearly with currency formatting, 6. Highlight urgent items (critical stock levels)
+          with clear priority, '7. When recommending reorders, consider both cost and urgency', '8. Explain EOQ recommendations
+          in business terms, not just formulas', 'WORKFLOW BEST PRACTICES:', 'For Complex Sourcing + Compliance Workflow:',
+        'When user asks to "find supplier for [PRODUCT] and check compliance":', 1. First call find_supplier_for_product(product_name_or_sku),
+        '2. Parse the response to extract the supplier ID (look for "ID: X" where X is a number)', 3. Then call validate_supplier_compliance(X)
+          using that numeric ID, 4. Combine both results in your response, 'Example: If find_supplier_for_product returns
+          "ID: 1", then call validate_supplier_compliance(1)', 'For Reorder Workflow:', 1. get_reorder_suggestions() to identify
+          what needs ordering, 2. check_supplier_catalog() to verify availability and pricing, 3. calculate_optimal_order_quantity()
+          for major items, 4. create_purchase_order() to generate PO, 5. Provide summary with total cost and approval recommendation,
+        'For Order Tracking:', 1. track_order_status() to get current status, '2. If delayed, suggest contacting supplier',
+        '3. If delivered, confirm receipt completion', 'For Supplier Evaluation:', 1. validate_supplier_compliance() for policy
+          check, 2. check_supplier_catalog() for capability assessment, '3. Provide recommendation: APPROVE or REJECT with
+          reasoning', 'For Sourcing:', 1. find_supplier_for_product() to identify potential suppliers, 2. validate_supplier_compliance()
+          to check their status, 3. check_supplier_catalog() to compare pricing, 'ERROR HANDLING:', '- If database connection
+          fails, inform user to check configuration', '- If SKU not found, suggest using inventory query first', '- If PO
+          format invalid, provide correct format example', '- If supplier not in system, explain how to add new supplier',
+        'COMMUNICATION STYLE:', '- Professional and detail-oriented', '- Use tables for multi-item orders', '- Always show
+          totals and costs prominently', '- Flag urgent items with clear visual indicators', '- Provide actionable next steps
+          with every response']
+      function: create_order_agent
+  policy_agent:
+    type: instance
+    models: [gemini-2.5-flash-lite]
+    tools: [search_policy_documents]
+    params:
+      name: policy_agent
+      instruction: ['You are the Policy Expert, a RAG-powered specialist in company policy', compliance and regulatory interpretation.,
+        'CAPABILITIES:', '- Semantic search over company policy documents using search_policy_documents tool', '- Return policy
+          interpretation with exact citations', '- Verify request compliance against established rules', '- Identify policy
+          conflicts or gaps', '- Provide multi-policy synthesis for complex scenarios', 'RAG SYSTEM:', '- Vector search over
+          policy document embeddings in Supabase', '- Retrieves top 3 most relevant policy sections', '- Includes source document
+          metadata (filename, category, title)', 'OPERATIONAL RULES:', '1. NEVER FABRICATE POLICY:', '- Only cite policies
+          found through search_policy_documents tool', '- If search returns no results for a specific query, try a broader
+          search', '- If user asks "what policies are available", list policy categories you find', '- Never guess or infer
+          policy from general knowledge', '2. SOURCE CITATION:', '- Always cite the source document filename and title', '-
+          Reference policy categories when relevant', '- Format: "According to our [Policy Title] policy..."', '3. STRICT
+          INTERPRETATION:', '- Interpret policies literally and conservatively', '- Do not offer exceptions or workarounds
+          unless explicitly stated in policy', '- Escalate ambiguous cases to human review', '4. MULTI-POLICY SYNTHESIS:',
+        '- For complex queries, consider multiple related policy areas', '- Identify potential conflicts between policies',
+        '- Synthesize coherent guidance across multiple documents', 'TOOL USAGE:', '- Always call search_policy_documents
+          before answering policy questions', '- Use specific, descriptive query text for better search results', '- Example
+          query: "return policy for electronics" not just "returns"', '- For "list all policies" or "available policies",
+          search for: "company policy documents overview"', 'SPECIAL CASES:', '- If user asks "what policies are available"
+          or "list all policies":', Call search_policy_documents with query="company policy employee handbook", This will
+          return a broad overview of available policy categories, 'EXAMPLE INTERACTIONS:', 'User: "Can a customer return a
+          product after 45 days?"', 'You: [Call search_policy_documents with query="product return policy timeframe"]', 'Then
+          respond: "According to our Product Return Policy, returns are only', accepted within 30 days of purchase. A 45-day
+          return would not be accepted.", 'User: "What''s our remote work policy?"', 'You: [Call search_policy_documents with
+          query="remote work policy"]', Then provide the policy details with source citation.]
+      function: create_policy_agent
+
+models:
+  gemini-2.5-flash-lite:
+    type: literal
+    agents: [inventory_agent, orchestrator_agent, order_agent, policy_agent, notification_agent, analytics_agent]
+
+tools:
+  calculate_inventory_value:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Calculate total inventory value with detailed breakdown by category.\n\nArgs:\n    category: Optional\
+        \ category filter\n    \nReturns:\n    Formatted string with value calculations"
+  calculate_optimal_order_quantity:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Calculate Economic Order Quantity (EOQ) for optimal purchasing.\n\nArgs:\n    sku: Product SKU to calculate\
+        \ EOQ for\n    \nReturns:\n    Formatted EOQ calculation"
+  check_supplier_catalog:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Query vendor availability and pricing from inventory.\n\nArgs:\n    supplier_name: Supplier name to query\n\
+        \    product_type: Optional product category filter\n    \nReturns:\n    Formatted supplier catalog information"
+  compare_categories:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Compare performance metrics between two product categories.\n\nArgs:\n    category_a: First category name\n\
+        \    category_b: Second category name\n    \nReturns:\n    Formatted comparison report"
+  compose_email_from_context:
+    type: function
+    agents: [notification_agent]
+    params:
+      description: Compose professional narrative (no tables) email from raw context.
+  create_purchase_order:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Create a purchase order with auto-calculated totals.\n\nArgs:\n    supplier: Supplier name or ID\n   \
+        \ items: JSON string with items array [{\"sku\": \"...\", \"quantity\": ...}]\n    delivery_date: Expected delivery\
+        \ date (YYYY-MM-DD format)\n    \nReturns:\n    Formatted purchase order"
+  detect_inventory_anomalies:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Detect unusual patterns in inventory data.\n\nArgs:\n    metric: Type of anomaly to detect (stock_levels,\
+        \ pricing, distribution)\n    \nReturns:\n    Formatted anomaly report"
+  draft_email:
+    type: function
+    agents: [notification_agent]
+    params:
+      description: Produce reviewable draft block (plain text only).
+  filter_products_by_price:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Filter products by price range and optionally by category.\n\nArgs:\n    min_price: Minimum price filter\
+        \ (optional)\n    max_price: Maximum price filter (optional)\n    category: Category filter (optional)\n    sort_by:\
+        \ Sort order (price_asc, price_desc, name, stock)\n    \nReturns:\n    Formatted list of products matching criteria"
+  find_supplier_for_product:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Find suppliers who provide a specific product based on purchase history.\n\nArgs:\n    product_name_or_sku:\
+        \ Product name or SKU to search for\n    \nReturns:\n    Formatted list of suppliers who have supplied this product"
+  generate_performance_report:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Generate comprehensive performance metrics report.\n\nArgs:\n    metric_type: Type of report (overview,\
+        \ stockout, turnover)\n    date_range: Days to analyze\n    \nReturns:\n    Formatted performance report"
+  generate_sales_forecast:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Predict future demand for a product based on current stock levels.\n\nArgs:\n    product_sku: Product\
+        \ SKU to forecast\n    horizon_days: Days to forecast ahead\n    \nReturns:\n    Formatted string with forecast"
+  get_all_categories:
+    type: function
+    agents: [inventory_agent]
+  get_inventory_trends:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Analyze inventory trends over a time period to identify fast and slow moving products.\n\nArgs:\n    days:\
+        \ Number of days to analyze (default 30)\n    \nReturns:\n    Formatted string with trend analysis"
+  get_low_stock_items:
+    type: function
+    agents: [analytics_agent]
+    params:
+      description: "Get products with stock levels below a specified threshold.\n\nArgs:\n    threshold: Stock quantity threshold\
+        \ (default 20 units)\n    \nReturns:\n    Formatted string with low stock products"
+  get_low_stock_products:
+    type: function
+    agents: [inventory_agent]
+  get_reorder_suggestions:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Generate reorder recommendations based on stock levels.\n\nArgs:\n    threshold: Stock level threshold\
+        \ to trigger reorder suggestion\n    \nReturns:\n    Formatted reorder recommendations"
+  query_inventory:
+    type: function
+    agents: [inventory_agent]
+  search_policy_documents:
+    type: function
+    agents: [policy_agent]
+  track_order_status:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Track purchase order status and delivery information.\n\nArgs:\n    po_number: Purchase order number to\
+        \ track\n    \nReturns:\n    Formatted order tracking information"
+  validate_supplier_compliance:
+    type: function
+    agents: [order_agent]
+    params:
+      description: "Check supplier compliance status and certifications.\n\nArgs:\n    supplier_id: Supplier ID or name to\
+        \ validate\n    \nReturns:\n    Formatted compliance report"
+
+teams:
+  agent:
+    type: hierarchy
+    agents: [agent, inventory_worker, policy_worker, analytics_worker, orders_worker, notification_worker]
+
+imports:
+  _rate_limit_exceeded_handler: slowapi._rate_limit_exceeded_handler
+  AGENT_CARD_WELL_KNOWN_PATH: google.adk.agents.remote_a2a_agent.AGENT_CARD_WELL_KNOWN_PATH
+  agent_metrics: shared.agent_metrics.agent_metrics
+  analytics_agent: agent.analytics_agent
+  analytics_router: agents.analytics.routes.router
+  Any: typing.Any
+  APIRouter: fastapi.APIRouter
+  async_retry_with_backoff: shared.retry_handler.async_retry_with_backoff
+  asynccontextmanager: contextlib.asynccontextmanager
+  asyncio: asyncio
+  BaseModel: pydantic.BaseModel
+  calculate_inventory_value: analytics_tools.calculate_inventory_value
+  calculate_optimal_order_quantity: order_tools.calculate_optimal_order_quantity
+  check_supplier_catalog: order_tools.check_supplier_catalog
+  compare_categories: analytics_tools.compare_categories
+  compose_email_from_context: agents.notification.email_draft_tool.compose_email_from_context
+  configure_structured_logging: shared.observability.configure_structured_logging
+  CORSMiddleware: fastapi.middleware.cors.CORSMiddleware
+  create_agent_metrics: shared.observability.create_agent_metrics
+  create_inventory_agent: agents.inventory.agent.create_inventory_agent
+  create_notification_agent: agents.notification.agent.create_notification_agent
+  create_orchestrator: orchestrator.agent.create_orchestrator
+  create_policy_agent: agents.policy.agent.create_policy_agent
+  create_purchase_order: order_tools.create_purchase_order
+  DatabaseSessionService: google.adk.sessions.DatabaseSessionService
+  date: datetime.date
+  datetime: datetime.datetime
+  detect_inventory_anomalies: analytics_tools.detect_inventory_anomalies
+  Dict: typing.Dict
+  draft_email: agents.notification.email_draft_tool.draft_email
+  Event: google.adk.events.Event
+  FastAPI: fastapi.FastAPI
+  filter_products_by_price: analytics_tools.filter_products_by_price
+  find_supplier_for_product: order_tools.find_supplier_for_product
+  genai: google.generativeai
+  generate_performance_report: analytics_tools.generate_performance_report
+  generate_sales_forecast: analytics_tools.generate_sales_forecast
+  get_all_categories: agents.inventory.inventory_query_tool.get_all_categories
+  get_inventory_trends: analytics_tools.get_inventory_trends
+  get_low_stock_items: analytics_tools.get_low_stock_items
+  get_low_stock_products: agents.inventory.inventory_query_tool.get_low_stock_products
+  get_memory_service: orchestrator.agent.get_memory_service
+  get_remote_address: slowapi.util.get_remote_address
+  get_reorder_suggestions: order_tools.get_reorder_suggestions
+  get_retry_handler: shared.retry_handler.get_retry_handler
+  get_session_service: orchestrator.agent.get_session_service
+  get_supabase_client: shared.supabase_client.get_supabase_client
+  get_supabase_session_service: shared.supabase_session_service.get_supabase_session_service
+  hitl_manager: orchestrator.hitl_manager.hitl_manager
+  HTTPException: fastapi.HTTPException
+  httpx: httpx
+  InitializationOptions: mcp.server.models.InitializationOptions
+  InMemoryMemoryService: google.adk.memory.InMemoryMemoryService
+  InMemorySessionService: google.adk.sessions.InMemorySessionService
+  INTENT_CLASSIFICATION_PROMPT: orchestrator.intent_classifier.INTENT_CLASSIFICATION_PROMPT
+  inventory_router: agents.inventory.routes.router
+  json: json
+  JSONResponse: fastapi.responses.JSONResponse
+  Limiter: slowapi.Limiter
+  List: typing.List
+  LlmAgent: google.adk.agents.LlmAgent
+  load_dotenv: dotenv.load_dotenv
+  logger: shared.observability.logger
+  logging: logging
+  math: math
+  MIMEMultipart: email.mime.multipart.MIMEMultipart
+  MIMEText: email.mime.text.MIMEText
+  notification_router: agents.notification.routes.router
+  Optional: typing.Optional
+  orchestrator_router: orchestrator.routes.router
+  order_agent: agent.order_agent
+  orders_router: agents.orders.routes.router
+  os: os
+  parse_intent_from_llm_response: orchestrator.intent_classifier.parse_intent_from_llm_response
+  Path: pathlib.Path
+  policy_router: agents.policy.routes.router
+  preload_memory_tool: google.adk.tools.preload_memory_tool
+  psutil: psutil
+  query_inventory: agents.inventory.inventory_query_tool.query_inventory
+  RateLimitExceeded: slowapi.errors.RateLimitExceeded
+  re: re
+  RemoteA2aAgent: google.adk.agents.remote_a2a_agent.RemoteA2aAgent
+  Request: fastapi.Request
+  RetryConfig: shared.retry_handler.RetryConfig
+  Runner: google.adk.runners.Runner
+  search_policy_documents: agents.policy.policy_search_tool.search_policy_documents
+  send_email: agents.notification.email_draft_tool.send_email
+  Server: mcp.server.Server
+  setup_opentelemetry: shared.observability.setup_opentelemetry
+  smtplib: smtplib
+  statistics: statistics
+  status: fastapi.status
+  stdio_server: mcp.server.stdio.stdio_server
+  sys: sys
+  TextContent: mcp.types.TextContent
+  time: time
+  timedelta: datetime.timedelta
+  timezone: datetime.timezone
+  Tool: mcp.types.Tool
+  traceback: traceback
+  track_order_status: order_tools.track_order_status
+  types: google.genai.types
+  uuid: uuid
+  uvicorn: uvicorn
+  validate_supplier_compliance: order_tools.validate_supplier_compliance
+  vecs: vecs
+
+functions:
+  _build_html:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [subject, sections, intro]
+    params:
+      returns: str
+  _fmt:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [row]
+  _format_body:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [greeting, intro, sections, closing]
+    params:
+      returns: str
+  _format_inventory_table:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [items]
+    params:
+      returns: tuple
+  _parse_inventory:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [lines]
+    params:
+      returns: list[dict]
+  _refine_purpose:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [raw]
+    params:
+      returns: str
+  _sanitize:
+    type: sync
+    module: backend.orchestrator.routes
+    args: [text]
+    params:
+      returns: str
+  _sanitize_context:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [raw]
+    params:
+      returns: list[str]
+  auto_save_to_memory:
+    type: async
+    module: backend.orchestrator.agent
+    args: [callback_context]
+  calculate_inventory_value:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [category]
+    params:
+      returns: str
+  calculate_optimal_order_quantity:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [sku]
+    params:
+      returns: str
+  call_a2a:
+    type: async
+    module: backend.orchestrator.routes
+    args: [url, prompt]
+    params:
+      returns: str
+  call_tool:
+    type: tool
+    module: backend.agents.policy.mcp_server
+    args: [name, arguments]
+    params:
+      returns: List[TextContent]
+  chat_endpoint:
+    type: async
+    module: backend.orchestrator.routes
+    args: [request]
+  check_supplier_catalog:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [supplier_name, product_type]
+    params:
+      returns: str
+  classify_intent:
+    type: async
+    module: backend.orchestrator.routes
+  compare_categories:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [category_a, category_b]
+    params:
+      returns: str
+  compose_email_from_context:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [recipient, purpose, context_data]
+    params:
+      returns: str
+  create_analytics_agent:
+    type: sync
+    module: backend.agents.analytics.agent
+  create_inventory_agent:
+    type: sync
+    module: backend.agents.inventory.agent
+  create_notification_agent:
+    type: sync
+    module: backend.agents.notification.agent
+  create_orchestrator:
+    type: sync
+    module: backend.orchestrator.agent
+  create_order_agent:
+    type: sync
+    module: backend.agents.orders.agent
+  create_policy_agent:
+    type: sync
+    module: backend.agents.policy.agent
+  create_purchase_order:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [supplier, items, delivery_date]
+    params:
+      returns: str
+  detect_inventory_anomalies:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [metric]
+    params:
+      returns: str
+  draft_email:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [to, subject, body]
+    params:
+      returns: str
+  filter_products_by_price:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [min_price, max_price, category, sort_by]
+    params:
+      returns: str
+  find_supplier_for_product:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [product_name_or_sku]
+    params:
+      returns: str
+  generate_performance_report:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [metric_type, date_range]
+    params:
+      returns: str
+  generate_sales_forecast:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [product_sku, horizon_days]
+    params:
+      returns: str
+  get_agent_card:
+    type: async
+    module: backend.agents.notification.routes
+  get_conversation_context:
+    type: async
+    module: backend.orchestrator.routes
+    params:
+      returns: str
+  get_inventory_trends:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [days]
+    params:
+      returns: str
+  get_low_stock_items:
+    type: sync
+    module: backend.agents.analytics.analytics_tools
+    args: [threshold]
+    params:
+      returns: str
+  get_memory_service:
+    type: sync
+    module: backend.orchestrator.agent
+  get_metrics:
+    type: async
+    module: backend.orchestrator.routes
+  get_reorder_suggestions:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [threshold]
+    params:
+      returns: str
+  get_session_service:
+    type: sync
+    module: backend.agents.notification.agent
+  global_exception_handler:
+    type: async
+    module: backend.main
+    args: [request, exc]
+  handle_task:
+    type: async
+    module: backend.agents.notification.routes
+    args: [request]
+  health_check:
+    type: async
+    module: backend.agents.orders.routes
+  lifespan:
+    type: async
+    module: backend.main
+    args: [app]
+  list_tools:
+    type: tool
+    module: backend.agents.policy.mcp_server
+    params:
+      returns: List[Tool]
+  main:
+    type: async
+    module: backend.agents.policy.mcp_server
+  readiness_check:
+    type: async
+    module: backend.main
+    args: [request]
+  root:
+    type: async
+    module: backend.main
+    args: [request]
+  send_email:
+    type: sync
+    module: backend.agents.notification.email_draft_tool
+    args: [to, subject, body, html_body]
+    params:
+      returns: str
+  track_order_status:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [po_number]
+    params:
+      returns: str
+  validate_supplier_compliance:
+    type: sync
+    module: backend.agents.orders.order_tools
+    args: [supplier_id]
+    params:
+      returns: str
+
+variables:
+  BASE_URL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.orchestrator.agent, backend.main, backend.orchestrator.routes]
+  COMPANY_NAME:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  EMAIL_DEMO_MODE:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  EMAIL_SIGNATURE:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  ENABLE_HITL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  ENABLE_MEMORY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  ENABLE_OTEL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  ENABLE_SESSION_PERSISTENCE:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  ENVIRONMENT:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  FROM_EMAIL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  GOOGLE_API_KEY:
+    type: env
+    params:
+      caller: [os.getenv, genai.Client, genai.configure]
+      path: [backend.agents.policy.mcp_server, backend.orchestrator.routes]
+  HOST:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  LAST_EMAIL_HTML:
+    type: env
+    params:
+      caller: [os.environ]
+  LOG_LEVEL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  OTEL_EXPORTER_OTLP_ENDPOINT:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  OTEL_SERVICE_NAME:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  PORT:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.main]
+  SESSION_TABLE_PREFIX:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.orchestrator.agent]
+  SMTP_HOST:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  SMTP_PASSWORD:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  SMTP_PORT:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  SMTP_USER:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool, backend.agents.notification.agent]
+  SPACE_AUTHOR_NAME:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  SPACE_ID:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.notification.email_draft_tool]
+  SUPABASE_DB_URL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.agents.inventory.agent, backend.agents.policy.mcp_server, backend.agents.orders.agent, backend.agents.analytics.agent]
+  USE_SUPABASE_SESSIONS:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [backend.orchestrator.agent]
+
+files:
+  agent.json:
+    type: pattern
+    actions: [read]
+    params:
+      caller: [os.path.join]
+      pattern: [os.path.dirname(), agent.json]
+  card_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [open, json.load]
+      alias: [f]
+
+networks:
+  smtp.gmail.com:
+    type: api
+    actions: [connect]
+    protocols: [smtp]
+    ports: ["587", "465"]
+    params:
+      caller: [send_email]
