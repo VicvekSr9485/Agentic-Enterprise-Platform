@@ -6,7 +6,7 @@ import statistics
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from shared.supabase_client import get_supabase_client
+from shared.supabase_client import get_supabase_client, sanitize_filter_term
 
 
 def get_low_stock_items(threshold: int = 20) -> str:
@@ -57,7 +57,7 @@ def get_low_stock_items(threshold: int = 20) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error retrieving low stock products: {str(e)}"
+        return f"Error retrieving low stock products. Please check database connection."
 
 
 def get_inventory_trends(days: int = 30) -> str:
@@ -114,7 +114,7 @@ def get_inventory_trends(days: int = 30) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error analyzing trends: {str(e)}"
+        return f"Error analyzing trends. Please try again or contact support."
 
 
 def calculate_inventory_value(category: Optional[str] = None) -> str:
@@ -134,7 +134,7 @@ def calculate_inventory_value(category: Optional[str] = None) -> str:
             results = client.query(
                 "inventory",
                 select="name,sku,quantity,price,category,location",
-                filters={"category": f"ilike.{category}"}
+                filters={"category": f"ilike.{sanitize_filter_term(category)}"}
             )
         else:
             results = client.query(
@@ -193,7 +193,7 @@ def calculate_inventory_value(category: Optional[str] = None) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error calculating inventory value: {str(e)}"
+        return f"Error calculating inventory value. Please try again or contact support."
 
 
 def generate_sales_forecast(product_sku: str, horizon_days: int = 90) -> str:
@@ -213,7 +213,7 @@ def generate_sales_forecast(product_sku: str, horizon_days: int = 90) -> str:
         results = client.query(
             "inventory",
             select="name,sku,quantity,price,category",
-            filters={"sku": f"ilike.{product_sku}"}
+            filters={"sku": f"ilike.{sanitize_filter_term(product_sku)}"}
         )
         
         if not results:
@@ -260,7 +260,7 @@ def generate_sales_forecast(product_sku: str, horizon_days: int = 90) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error generating forecast: {str(e)}"
+        return f"Error generating forecast. Please try again or contact support."
 
 
 def generate_performance_report(metric_type: str = "overview", date_range: int = 30) -> str:
@@ -334,7 +334,7 @@ def generate_performance_report(metric_type: str = "overview", date_range: int =
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error generating report: {str(e)}"
+        return f"Error generating report. Please try again or contact support."
 
 
 def compare_categories(category_a: str, category_b: str) -> str:
@@ -420,7 +420,7 @@ def compare_categories(category_a: str, category_b: str) -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error comparing categories: {str(e)}"
+        return f"Error comparing categories. Please try again or contact support."
 
 
 def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
@@ -507,7 +507,7 @@ def detect_inventory_anomalies(metric: str = "stock_levels") -> str:
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error detecting anomalies: {str(e)}"
+        return f"Error detecting anomalies. Please try again or contact support."
 
 
 def filter_products_by_price(min_price: Optional[float] = None, max_price: Optional[float] = None, 
@@ -530,7 +530,7 @@ def filter_products_by_price(min_price: Optional[float] = None, max_price: Optio
         # Start with all products
         filters = {}
         if category:
-            filters["category"] = f"ilike.{category}"
+            filters["category"] = f"ilike.{sanitize_filter_term(category)}"
         
         results = client.query(
             "inventory",
@@ -609,4 +609,4 @@ def filter_products_by_price(min_price: Optional[float] = None, max_price: Optio
         return "\n".join(output)
         
     except Exception as e:
-        return f"Error filtering products by price: {str(e)}"
+        return f"Error filtering products by price. Please try again or contact support."

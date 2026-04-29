@@ -9,11 +9,21 @@ from google.genai import types
 from google.adk.sessions import InMemorySessionService
 import os
 
-from .agent import order_agent
+from .agent import create_order_agent
+from shared.logging_utils import get_logger
 
+logger = get_logger("agents.orders.routes")
 router = APIRouter(tags=["orders"])
 
 stateless_session_service = InMemorySessionService()
+_order_agent = None
+
+
+def _get_order_agent():
+    global _order_agent
+    if _order_agent is None:
+        _order_agent = create_order_agent()
+    return _order_agent
 
 class A2APart(BaseModel):
     kind: str
@@ -43,20 +53,17 @@ class A2ARequest(BaseModel):
 
 @router.post("/a2a/interact")
 async def handle_task(raw_request: Request):
-    body = await raw_request.body()
-    print(f"[ORDERS A2A] Raw request body: {body.decode()}")
-    
     try:
         body_dict = await raw_request.json()
         request = A2ARequest(**body_dict)
         message = request.params.message
     except Exception as e:
-        print(f"[ORDERS A2A] Failed to parse request: {e}")
+        logger.warning("orders_a2a_parse_failed", error=str(e))
         raise HTTPException(status_code=422, detail=str(e))
-    
+
     try:
         session_id = str(uuid.uuid4())
-        print(f"[ORDERS A2A] Processing with temporary session: {session_id}")
+        logger.info("orders_a2a_start", session_id=session_id)
 
         await stateless_session_service.create_session(
             app_name="agents",
@@ -65,7 +72,7 @@ async def handle_task(raw_request: Request):
         )
 
         runner = Runner(
-            agent=order_agent,
+            agent=_get_order_agent(),
             app_name="agents",
             session_service=stateless_session_service
         )
@@ -93,37 +100,24 @@ async def handle_task(raw_request: Request):
             event_count += 1
             if event.content and event.content.parts:
                 for idx, part in enumerate(event.content.parts):
-                    # Check for normal text response
                     if hasattr(part, 'text') and part.text:
                         result_text += part.text
-                        print(f"[ORDERS A2A] Got text response (length {len(part.text)})")
-                    # Capture function response as fallback
                     elif hasattr(part, 'function_response') and part.function_response:
-                        print(f"[ORDERS A2A] Found function_response: {type(part.function_response)}")
-                        print(f"[ORDERS A2A] function_response attributes: {dir(part.function_response)}")
-                        print(f"[ORDERS A2A] function_response dict: {part.function_response.__dict__ if hasattr(part.function_response, '__dict__') else 'N/A'}")
-                        
-                        # Try multiple ways to extract the response
                         if hasattr(part.function_response, 'response'):
-                            print(f"[ORDERS A2A] Has response attribute: {part.function_response.response}")
                             function_response_text = str(part.function_response.response)
                         elif hasattr(part.function_response, 'content'):
-                            print(f"[ORDERS A2A] Has content attribute: {part.function_response.content}")
                             function_response_text = str(part.function_response.content)
-        
-        # If no text response was generated, use the function response directly
+
         if not result_text and function_response_text:
             result_text = function_response_text
-            print(f"[ORDERS A2A] Using function response as final output (length {len(result_text)})")
-        
-        # Ensure we never return an empty string if we have a result
+
         if not result_text:
             result_text = "No information found."
-            print("[ORDERS A2A] Warning: Empty result text, using default message.")
+            logger.warning("orders_a2a_empty_result", session_id=session_id)
 
-        print(f"[ORDERS A2A] Total events: {event_count}, result length: {len(result_text)}")
-        
-        response = {
+        logger.info("orders_a2a_complete", session_id=session_id, events=event_count, chars=len(result_text))
+
+        return {
             "id": request.id,
             "jsonrpc": "2.0",
             "result": {
@@ -133,13 +127,8 @@ async def handle_task(raw_request: Request):
                 "parts": [{"kind": "text", "text": result_text}]
             }
         }
-        print(f"[ORDERS A2A] Response structure: {json.dumps(response, indent=2)[:500]}...")
-        print(f"[ORDERS A2A] Sending response")
-        return response
     except Exception as e:
-        print(f"Order Agent Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("orders_agent_error", error=str(e), exc_info=True)
         return {
             "id": request.id,
             "jsonrpc": "2.0",

@@ -171,12 +171,12 @@ class AgentMetrics:
     """
     Context manager for tracking agent execution metrics.
     """
-    
+
     def __init__(self, metrics_dict: dict, agent_name: str):
         self.metrics = metrics_dict
         self.agent_name = agent_name
         self.start_time = None
-    
+
     def __enter__(self):
         import time
         self.start_time = time.time()
@@ -184,19 +184,52 @@ class AgentMetrics:
             1, {"agent": self.agent_name}
         )
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         import time
         duration = time.time() - self.start_time
-        
+
         self.metrics["agent_request_duration"].record(
             duration, {"agent": self.agent_name}
         )
-        
+
         if exc_type is not None:
             self.metrics["agent_error_counter"].add(
                 1, {"agent": self.agent_name, "error_type": exc_type.__name__}
             )
+
+
+from contextlib import contextmanager
+
+
+def get_tracer() -> trace.Tracer:
+    """Return a tracer that no-ops when OTel is not configured."""
+    return trace.get_tracer("enterprise-agents-platform")
+
+
+@contextmanager
+def trace_span(name: str, **attributes):
+    """Context manager that creates a span and records exceptions on it.
+
+    Always works — when OTel is not configured the underlying tracer is a
+    no-op, so callers don't need to gate on `if tracer:`.
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span(name) as span:
+        for key, value in attributes.items():
+            try:
+                span.set_attribute(key, value)
+            except Exception:
+                pass
+        try:
+            yield span
+        except Exception as exc:
+            try:
+                span.record_exception(exc)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+            except Exception:
+                pass
+            raise
 
 
 logger = structlog.get_logger()

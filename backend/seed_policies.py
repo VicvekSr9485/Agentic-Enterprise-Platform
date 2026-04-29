@@ -9,9 +9,10 @@ import os
 import sys
 from dotenv import load_dotenv
 import vecs
-from google import genai
 
 load_dotenv()
+
+from shared.llm_config import embed_text, embedding_dimension, embedding_model_id
 
 POLICIES = [
     {
@@ -137,31 +138,39 @@ def seed_policies():
         sys.exit(1)
     
     vx = vecs.create_client(db_url)
-    
-    print("📚 Creating/getting policy_documents collection...")
-    docs = vx.get_or_create_collection(name="policy_documents", dimension=768)
-    
-    print("🤖 Initializing embedding model...")
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        print("❌ Error: GOOGLE_API_KEY not set in environment")
+
+    dim = embedding_dimension()
+    model = embedding_model_id()
+    print(f"📚 Creating/getting policy_documents collection ({dim}-dim, model={model})...")
+    try:
+        docs = vx.get_or_create_collection(name="policy_documents", dimension=dim)
+    except Exception as exc:
+        # Likely a dimension mismatch with an existing collection (e.g. switched
+        # embedding provider). Drop and recreate.
+        if "Dimension" in str(exc) or "MismatchedDimension" in type(exc).__name__:
+            print(f"   Existing collection has different dimensions — recreating ({exc}).")
+            try:
+                vx.delete_collection("policy_documents")
+            except Exception as drop_exc:
+                print(f"   Could not delete existing collection: {drop_exc}")
+                raise
+            docs = vx.get_or_create_collection(name="policy_documents", dimension=dim)
+        else:
+            raise
+
+    if not os.getenv("OPENAI_API_KEY"):
+        print("❌ Error: OPENAI_API_KEY not set in environment")
         sys.exit(1)
-    
-    client = genai.Client(api_key=api_key)
-    
+
     print(f"\n📝 Inserting {len(POLICIES)} policy documents...\n")
-    
+
     records = []
     for i, policy in enumerate(POLICIES, 1):
         print(f"  [{i}/{len(POLICIES)}] Embedding: {policy['title']}")
-        
+
         try:
-            response = client.models.embed_content(
-                model="text-embedding-004",
-                contents=policy['content']
-            )
-            embedding = response.embeddings[0].values
-            
+            embedding = embed_text(policy['content'])
+
             records.append((
                 policy['id'],
                 embedding,
@@ -172,9 +181,9 @@ def seed_policies():
                     "content": policy['content']
                 }
             ))
-            
+
             print(f"      ✓ Embedded ({len(embedding)} dimensions)")
-            
+
         except Exception as e:
             print(f"      ❌ Error embedding policy: {e}")
             continue
@@ -193,27 +202,24 @@ def seed_policies():
         print("✅ Index created!")
         
         print("\n🧪 Testing vector search with sample query...")
-        test_embedding = client.models.embed_content(
-            model="text-embedding-004",
-            contents="What is the return policy for electronics?"
-        ).embeddings[0].values
-        
+        test_embedding = embed_text("What is the return policy for electronics?")
+
         results = docs.query(
             data=test_embedding,
             limit=2,
             include_value=True,
             include_metadata=True
         )
-        
+
         if results:
             print(f"✅ Found {len(results)} relevant policies:")
             for result in results:
                 print(f"   - {result[2]['title']}")
         else:
             print("⚠️  No results found in test query")
-        
+
         print(f"\n🎉 Policy database seeded successfully with {len(records)} documents!")
-        print(f"📊 Collection: policy_documents (768-dim vectors)")
+        print(f"📊 Collection: policy_documents ({dim}-dim vectors via {model})")
         
     except Exception as e:
         print(f"\n❌ Error inserting records: {e}")

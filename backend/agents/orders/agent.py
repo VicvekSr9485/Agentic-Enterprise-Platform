@@ -158,14 +158,13 @@ def create_order_agent():
     
     if not os.getenv("SUPABASE_DB_URL"):
         raise ValueError("SUPABASE_DB_URL environment variable not set. Order agent requires database access.")
-    
+
+    from shared.llm_config import make_llm
     agent = LlmAgent(
-        model="gemini-2.5-flash-lite",
+        model=make_llm(),
         name="order_specialist",
         instruction=system_instructions,
         tools=tools
     )
-    
-    return agent
 
-order_agent = create_order_agent()
+    return agent

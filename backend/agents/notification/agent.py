@@ -183,8 +183,9 @@ def create_notification_agent():
     - Include quantities, SKUs, and prices when available
     """
     
+    from shared.llm_config import make_llm
     agent = LlmAgent(
-        model="gemini-2.5-flash-lite",
+        model=make_llm(),
         name="notification_agent",
         instruction=system_instructions,
         tools=[draft_email, compose_email_from_context],
