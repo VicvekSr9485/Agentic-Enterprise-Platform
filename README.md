@@ -10,422 +10,245 @@ pinned: false
 
 # Enterprise Agents Platform
 
-A production-ready Level 3 Modular Monolith Agent Swarm built with Google Agent Development Kit (ADK). This platform provides intelligent business workflow automation through specialized AI agents that communicate via the Agent-to-Agent (A2A) Protocol.
+A modular-monolith multi-agent platform built on the Google Agent Development Kit (ADK), pluggable across model providers (OpenAI by default, Gemini / Anthropic / Bedrock optional via LiteLLM), with bearer-token auth, persistent HITL approvals, structured logging, and durable agent telemetry.
 
-**🚀 Deployed on Hugging Face Spaces** - Backend API with multi-agent orchestration, context-aware conversations, and Human-in-the-Loop workflows.
+One **orchestrator** routes requests to five specialist worker agents over the A2A protocol:
 
-## Architecture Overview
+- **Inventory** — product database lookups (name / SKU / category, low-stock).
+- **Policy** — RAG over policy docs via pgvector (`vecs`).
+- **Analytics** — price-band filters, valuations, EOQ-style demand math, anomaly detection.
+- **Orders** — purchase orders, supplier compliance, sourcing, EOQ calculations grounded in real PO history.
+- **Notification** — drafts emails with HITL approval; SMTP send (or simulated send on HF Spaces / demo mode).
 
-The platform implements a hierarchical agent architecture with one orchestrator coordinating five specialized worker agents:
+## Architecture
 
-- **Orchestrator Agent**: Intelligent routing, multi-agent coordination, and context management with memory
-- **Inventory Agent**: Product database queries, stock levels, pricing, and availability checks
-- **Policy Agent**: RAG-powered policy document search, compliance verification, and regulatory guidance
-- **Analytics Agent**: Business intelligence, trend analysis, sales forecasting, and performance reporting
-- **Order Management Agent**: Purchase order creation, supplier management, procurement automation, and reorder recommendations
-- **Notification Agent**: Email drafting and sending with Human-in-the-Loop (HITL) approval workflow
+```
+        ┌─────────────────────┐
+        │   React + Vite UI   │  (Vercel)
+        └──────────┬──────────┘
+                   │  POST /orchestrator/chat
+                   │  Authorization: Bearer $PLATFORM_API_KEY
+                   ▼
+        ┌─────────────────────┐
+        │   FastAPI gateway   │
+        │   • bearer-auth mw  │
+        │   • request-id mw   │
+        │   • CORS + slowapi  │
+        └──────────┬──────────┘
+                   │
+                   ▼
+        ┌─────────────────────┐                ┌──────────────────┐
+        │   Orchestrator      │  intent-class. │  OpenAI / LiteLlm │
+        │   (ADK LlmAgent)    ├───────────────►│  (chat + embed)   │
+        └──────────┬──────────┘                └──────────────────┘
+                   │  A2A JSON-RPC over HTTP
+        ┌──────────┼──────────┬──────────┬──────────┐
+        ▼          ▼          ▼          ▼          ▼
+   inventory   policy    analytics    orders   notification
+        │          │          │          │          │
+        ▼          ▼          ▼          ▼          ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Supabase: inventory · suppliers · policy_docs   │
+   │            hitl_approvals · agent_metrics        │
+   │            vecs.policy_documents (pgvector)      │
+   └──────────────────────────────────────────────────┘
+```
 
-### Key Features
+## Tech stack
 
-- **A2A Protocol**: All agents communicate via standardized Agent-to-Agent protocol
-- **Session Persistence**: Conversation history maintained across sessions using SQLite
-- **Memory Management**: Orchestrator maintains global context for improved coordination
-- **HITL Workflow**: Critical actions require human approval before execution
-- **Intent Classification**: LLM-based routing with 10-second timeout for reliability
-- **Multi-Agent Coordination**: Sequential, parallel, iterative, and conditional execution strategies
-- **Observability**: Comprehensive logging, metrics tracking, and error handling
-- **Production Ready**: Rate limiting, health checks, CORS configuration, and structured error responses
+**Backend** — Python 3.12, FastAPI, Google ADK + LiteLLM, OpenAI SDK (chat + embeddings), Supabase REST + Postgres, `vecs` for pgvector RAG, structlog, OpenTelemetry, slowapi, pytest.
 
-## Technology Stack
+**Frontend** — React 19, Vite 7, Tailwind 4, react-markdown, vanilla `fetch` with localStorage persistence and AbortController.
 
-### Backend
-- **Framework**: FastAPI 0.115+
-- **AI/ML**: Google Generative AI (Gemini 2.5 Flash Lite)
-- **Agent Framework**: Google ADK (Agent Development Kit)
-- **Database**: PostgreSQL (Supabase) for inventory/orders, SQLite for sessions
-- **API Protocol**: A2A (Agent-to-Agent) via HTTP/JSON
-- **Observability**: Structured logging, OpenTelemetry support
+**Infra** — Docker (multi-stage; backend last for HF Spaces), Hugging Face Spaces (backend), Vercel (frontend), Supabase (data + RAG).
 
-### Frontend
-- **Framework**: React 18 with Vite
-- **Styling**: Tailwind CSS with custom gradients
-- **UI Components**: Custom-built responsive components
-- **State Management**: React Hooks
-- **Build Tool**: Vite for fast development and optimized production builds
+## Configuration
 
-## Quick Start with Docker
-
-### Prerequisites
-- Docker 20.10+
-- Docker Compose 2.0+
-- Supabase account (for database)
-- Google AI API key
-
-### Environment Configuration
-
-1. Create a `.env` file in the `backend/` directory:
+All configuration is environment-driven. Copy this template into `backend/.env` (or set as Space / Vercel env vars).
 
 ```bash
-# AI Configuration
-GOOGLE_API_KEY=your_google_api_key_here
+# --- Models ---------------------------------------------------------------
+OPENAI_API_KEY=sk-proj-...
+LLM_MODEL=openai/gpt-4o-mini                    # any LiteLLM-supported model
+EMBEDDING_MODEL=text-embedding-3-small          # 1536 dims; -3-large is 3072
+# EMBEDDING_DIM=                                # override only if needed
 
-# Database Configuration
-SUPABASE_DB_URL=postgresql://user:password@host:5432/dbname
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_supabase_anon_key
-SESSION_DB_URL=sqlite:///./sessions.db
+# --- Auth (set to enable) -------------------------------------------------
+PLATFORM_API_KEY=                               # CSV of accepted bearer tokens
 
-# Server Configuration
-BASE_URL=http://localhost:8000
-PORT=8000
+# --- Supabase -------------------------------------------------------------
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_KEY=<service-role-jwt>
+SUPABASE_DB_URL=postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:5432/postgres
+
+# --- Server ---------------------------------------------------------------
+BASE_URL=http://localhost:8000                  # MUST be the public URL in prod
 HOST=0.0.0.0
+PORT=8000
 LOG_LEVEL=INFO
+DEFAULT_RATE_LIMIT=60/minute
+MAX_PROMPT_CHARS=8000
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
-# Email Configuration (Optional)
+# --- HITL -----------------------------------------------------------------
+ENABLE_HITL=true
+HITL_APPROVAL_TTL_MINUTES=30
+
+# --- Email ----------------------------------------------------------------
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-FROM_EMAIL=your_email@gmail.com
+SMTP_USER=
+SMTP_PASSWORD=
+FROM_EMAIL=
+EMAIL_DEMO_MODE=false                           # forces simulated send
+EMAIL_ALLOWED_DOMAINS=                          # CSV; empty = open
+EMAIL_ALLOWED_RECIPIENTS=                       # CSV; empty = open
+COMPANY_NAME=Company
+EMAIL_SIGNATURE=Best regards\nCompany
 
-# Feature Flags
-ENABLE_HITL=true
-ENABLE_SESSION_PERSISTENCE=true
-ENABLE_MEMORY=true
-ENABLE_RETRY_LOGIC=true
-ENABLE_RATE_LIMITING=true
-
-# CORS Configuration
-CORS_ORIGINS=http://localhost:3000,http://localhost:8000
-
-# Observability (Optional)
+# --- Observability --------------------------------------------------------
 ENABLE_OTEL=false
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 OTEL_SERVICE_NAME=enterprise-agents-platform
 ```
 
-### Running with Docker
+`PLATFORM_API_KEY` is **the** auth toggle. When unset, every endpoint is open (dev convenience). When set, every `/orchestrator/*` and `/{agent}/a2a/*` request requires `Authorization: Bearer <key>`. Multiple comma-separated keys are accepted to allow rotation.
 
-Build and start all services:
+## Database setup
 
-```bash
-docker-compose up --build
-```
+Open the Supabase SQL Editor and run, in order:
 
-Or run in detached mode:
+1. `backend/setup_database.sql` — `vector` extension, `inventory`, `policy_documents` (with sample rows).
+2. `backend/setup_orders_tables.sql` — `suppliers`, `purchase_orders` (with sample rows).
+3. `superbase/migrations/202604290001_observability_tables.sql` — `hitl_approvals`, `agent_metrics`.
 
-```bash
-docker-compose up -d
-```
+Then seed the policy RAG (vecs collection) once:
 
-The application will be available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
-
-### Stopping Services
-
-```bash
-docker-compose down
-```
-
-To remove volumes as well:
-
-```bash
-docker-compose down -v
-```
-
-## Manual Installation
-
-### Backend Setup
-
-1. Navigate to backend directory:
 ```bash
 cd backend
+source venv/bin/activate
+python seed_policies.py
 ```
 
-2. Create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+The seeder embeds each policy doc with `EMBEDDING_MODEL` (default OpenAI 1536-dim) and writes them to the `vecs.policy_documents` collection. If a collection of a different dimension already exists from an earlier run, it is automatically dropped and recreated.
 
-3. Install dependencies:
+## Quick start (local)
+
 ```bash
+# Backend
+cd backend
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-```
+python validate_config.py        # sanity-check env + DB
+python seed_policies.py          # one-time RAG seed
+python main.py                   # serves on :8000
 
-4. Configure environment variables (see `.env` example above)
-
-5. Initialize database:
-```bash
-python seed_inventory.py  # Seeds sample inventory data
-```
-
-6. Start the server:
-```bash
-python main.py
-```
-
-Or using uvicorn directly:
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### Frontend Setup
-
-1. Navigate to frontend directory:
-```bash
+# Frontend
 cd frontend
-```
-
-2. Install dependencies:
-```bash
 npm install
+npm run dev                      # serves on :5173
 ```
 
-3. Start development server:
+The dev frontend reads `VITE_API_BASE` (default `http://localhost:8000`) and `VITE_API_TOKEN`. If `PLATFORM_API_KEY` is set on the backend, you must also set `VITE_API_TOKEN` to a matching value.
+
+## Quick start (Docker)
+
 ```bash
-npm run dev
+docker compose up --build
 ```
 
-4. Build for production:
+Spins up `backend` (port 8000) and `frontend` nginx (port 3000), each from its own stage of the multi-stage `Dockerfile`. Env vars are read from a `.env` next to `docker-compose.yml`.
+
+## API
+
+### Orchestrator
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/orchestrator/chat` | Main chat entrypoint. Body: `{session_id, prompt}`. Auth required. |
+| GET | `/orchestrator/metrics` | Rolling per-agent stats (also persisted to `agent_metrics` table). |
+| GET | `/orchestrator/.well-known/agent-card.json` | A2A agent card. |
+
+### Per-agent (inventory, policy, analytics, orders, notification)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/{agent}/a2a/interact` | A2A JSON-RPC `message/send`. Auth required. |
+| GET | `/{agent}/.well-known/agent-card.json` | A2A agent card (public). |
+
+### System
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| GET | `/` | public | Platform manifest. |
+| GET | `/health` | public | Liveness + CPU/memory snapshot. |
+| GET | `/ready` | public | Readiness probe. |
+| GET | `/docs` | public | Swagger UI. |
+| GET | `/redoc` | public | ReDoc. |
+
+Every response carries an `X-Request-ID` header that mirrors the `trace_id` in `ChatResponse`, making it straightforward to follow a single user turn across the orchestrator → A2A → tool boundary in logs.
+
+## Switching model providers
+
+Everything routes through `backend/shared/llm_config.py`. To swap providers, change two env vars:
+
 ```bash
-npm run build
+# OpenAI (default)
+LLM_MODEL=openai/gpt-4o-mini
+EMBEDDING_MODEL=text-embedding-3-small
+
+# Gemini
+LLM_MODEL=gemini/gemini-2.5-flash-lite
+EMBEDDING_MODEL=text-embedding-004
+GOOGLE_API_KEY=...
+
+# Anthropic
+LLM_MODEL=anthropic/claude-sonnet-4-5
+EMBEDDING_MODEL=text-embedding-3-small        # Anthropic has no embeddings API
+ANTHROPIC_API_KEY=...
 ```
 
-5. Preview production build:
+After changing `EMBEDDING_MODEL`, re-run `python seed_policies.py` — the seeder auto-drops the existing `policy_documents` vecs collection if its dimension doesn't match the new model and rebuilds it.
+
+## Security notes
+
+- **Bearer-token auth** is enforced platform-wide when `PLATFORM_API_KEY` is set. Tokens are compared with `hmac.compare_digest`. CSV form supports rotation.
+- **HITL approvals** are scoped by `(user_id, session_id)`. The user_id is sha256-derived from the bearer token, so cross-user approval hijack is not possible.
+- **Email recipient allowlist** (`EMAIL_ALLOWED_DOMAINS` / `EMAIL_ALLOWED_RECIPIENTS`) is enforced both at compose time and at SMTP send. Empty values mean "any valid address" for back-compat — set them in production.
+- **Email HTML body** is `html.escape`-d before injection; user/agent context cannot inject script tags.
+- **PostgREST filter inputs** from agent tools pass through `sanitize_filter_term` to strip operator characters that could re-shape queries.
+- **Pydantic size limits** on `ChatRequest.prompt` (8 KB default) prevent unbounded LLM token spend per call.
+- **Per-token rate limiting** via slowapi (`DEFAULT_RATE_LIMIT`, default 60/minute) keyed on the user_id derived from the bearer token (with IP fallback for anonymous).
+
+## Observability
+
+- **Structured logs** via `structlog` with request-id, session-id, user-id, agent-name context. Set `LOG_LEVEL=DEBUG` for tool-call detail.
+- **Request-ID propagation** — every response carries `X-Request-ID`, every log line and OTel span is bound to it.
+- **OpenTelemetry** spans wrap every A2A call when `ENABLE_OTEL=true` and `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+- **Agent metrics** — per-call latency, success/failure, error sample, token count are aggregated in-memory and persisted to the `agent_metrics` Supabase table (queryable across replicas).
+
+## Testing
+
 ```bash
-npm run preview
+cd backend
+source venv/bin/activate
+python -m pytest tests/ -q
 ```
 
-## API Documentation
-
-### Orchestrator Endpoints
-
-- `POST /orchestrator/chat` - Main chat interface with intent classification and agent routing
-- `GET /orchestrator/metrics` - Agent performance metrics and statistics
-
-### Agent Endpoints
-
-Each agent exposes:
-- `POST /{agent}/a2a/interact` - A2A interaction endpoint
-- `GET /{agent}/.well-known/agent.json` - Agent card for discovery
-- `GET /{agent}/health` - Health check endpoint
-
-Available agents: `/inventory`, `/policy`, `/analytics`, `/orders`, `/notification`
-
-### System Endpoints
-
-- `GET /` - Platform status overview
-- `GET /health` - Kubernetes-style health check
-- `GET /ready` - Readiness probe
-- `GET /docs` - Interactive API documentation (Swagger UI)
-- `GET /redoc` - Alternative API documentation (ReDoc)
-
-## Agent Capabilities
-
-### Inventory Agent
-- Query products by name, SKU, or category
-- Get all product categories with counts
-- Find low-stock products below threshold
-- Real-time stock level checks
-
-### Policy Agent
-- Semantic search across policy documents
-- Return policy verification
-- HR policy lookups
-- Compliance and regulatory guidance
-
-### Analytics Agent
-- Inventory trend analysis (fast/slow movers)
-- Inventory valuation with category breakdowns
-- Sales forecasting and demand prediction
-- Performance reporting and KPI generation
-- Category comparison analysis
-- Anomaly detection in stock levels and pricing
-
-### Order Management Agent
-- Purchase order creation with auto-calculated totals
-- Supplier catalog queries
-- Order status tracking with delivery estimates
-- Intelligent reorder recommendations
-- Supplier compliance validation
-- Economic Order Quantity (EOQ) calculations
-
-### Notification Agent
-- Email drafting with context awareness
-- HITL approval workflow for all sends
-- Template-based email generation
-- Rate limiting and safety checks
-
-## Multi-Agent Workflows
-
-The orchestrator supports complex workflows across multiple agents:
-
-### Example: Complete Procurement Workflow
-```
-User: "Analyze inventory trends, recommend what to reorder, and email the purchase recommendations to procurement@company.com"
-
-Orchestrator coordinates:
-1. Analytics Agent: Analyzes trends and identifies low-stock items
-2. Order Agent: Generates reorder recommendations with costs
-3. Notification Agent: Drafts email with HITL approval
-4. Returns: Comprehensive response with approval prompt
-```
-
-### Example: Data-Driven Decision Making
-```
-User: "Compare pump vs valve categories, forecast demand for PUMP-001, and create a purchase order if needed"
-
-Orchestrator coordinates:
-1. Analytics Agent: Compares categories and forecasts demand
-2. Order Agent: Calculates optimal order quantity
-3. Order Agent: Creates purchase order draft
-4. Returns: Complete analysis with actionable PO
-```
-
-## Development
-
-### Backend Development
-
-Run tests:
-```bash
-pytest
-```
-
-Code formatting:
-```bash
-black .
-```
-
-Linting:
-```bash
-pylint backend/
-```
-
-### Frontend Development
-
-Run linter:
-```bash
-npm run lint
-```
-
-Format code:
-```bash
-npm run format
-```
-
-Type checking (if TypeScript):
-```bash
-npm run type-check
-```
-
-## Production Deployment
-
-### Backend Deployment Checklist
-
-- Set `ENVIRONMENT=production` in `.env`
-- Use production database credentials
-- Configure proper CORS origins
-- Enable rate limiting with appropriate limits
-- Set up log aggregation (e.g., CloudWatch, Datadog)
-- Configure health check endpoints for load balancer
-- Use secrets manager for sensitive credentials
-- Enable OpenTelemetry for observability
-- Set up SSL/TLS certificates
-- Configure firewall rules and IP whitelisting
-
-### Frontend Deployment Checklist
-
-- Build optimized production bundle: `npm run build`
-- Serve static files via CDN (e.g., CloudFront, Vercel)
-- Configure proper API base URL
-- Enable HTTPS
-- Set up caching headers
-- Configure CSP (Content Security Policy)
-- Enable compression (gzip/brotli)
-- Set up monitoring and error tracking (e.g., Sentry)
-
-### Docker Production Deployment
-
-1. Build production images:
-```bash
-docker-compose build
-```
-
-2. Tag and push to registry:
-```bash
-docker tag enterprise-agents-platform-backend:latest your-registry/backend:latest
-docker tag enterprise-agents-platform-frontend:latest your-registry/frontend:latest
-docker push your-registry/backend:latest
-docker push your-registry/frontend:latest
-```
-
-3. Deploy to orchestration platform (Kubernetes, ECS, etc.)
-
-## Monitoring and Observability
-
-### Health Checks
-
-- Backend: `GET /health` - Returns system metrics (CPU, memory)
-- Frontend: Health check via root path
-- Individual agent health: `GET /{agent}/health`
-
-### Metrics
-
-Access orchestrator metrics:
-```bash
-curl http://localhost:8000/orchestrator/metrics
-```
-
-Returns:
-- Success rate per agent
-- Average latency
-- Error counts and types
-- Total requests processed
-
-### Logs
-
-Structured JSON logging enabled by default. Configure log level via `LOG_LEVEL` environment variable:
-- `DEBUG`: Verbose logging including tool calls
-- `INFO`: Standard operational logging
-- `WARNING`: Warning messages and recoverable errors
-- `ERROR`: Error conditions
-- `CRITICAL`: Critical failures
+Covers: intent-classifier parser repair, bearer-token auth helpers, HITL scoping + TTL, PostgREST filter sanitization, email allowlist + HTML escaping. Tests do not require live Supabase or OpenAI credentials.
 
 ## Troubleshooting
 
-### Common Issues
-
-**Database Connection Timeout**
-- Verify `SUPABASE_DB_URL` is correct
-- Check IP whitelist in Supabase dashboard
-- Ensure database is not paused
-
-**Agent Not Responding**
-- Check agent health endpoint: `GET /{agent}/health`
-- Verify API key is valid: `GOOGLE_API_KEY`
-- Review logs for specific error messages
-
-**HITL Approval Not Working**
-- Ensure `ENABLE_HITL=true` in environment
-- Check session persistence is enabled
-- Verify session ID consistency across requests
-
-**Frontend Cannot Connect to Backend**
-- Verify CORS origins in backend `.env`
-- Check backend is running on correct port
-- Ensure API base URL is configured correctly in frontend
+| Symptom | Likely cause |
+| --- | --- |
+| `psycopg2.OperationalError: could not translate host name` | Stale `SUPABASE_DB_URL` (the project was deleted/renamed). Update both root and `backend/.env`. |
+| `400 INVALID_ARGUMENT API key expired` | `OPENAI_API_KEY` (or `GOOGLE_API_KEY` if using Gemini) expired or wrong project. |
+| Browser shows "blocked by CORS policy" | The dev frontend origin is not in `CORS_ORIGINS`. Add `http://localhost:5173`. |
+| Chat returns 401 from frontend | Backend has `PLATFORM_API_KEY` set but `VITE_API_TOKEN` is empty/wrong. |
+| `MismatchedDimension` from `vecs` | `EMBEDDING_MODEL` changed. Re-run `python seed_policies.py` (it auto-recreates). |
+| Tool error envelopes leak into chat reply | A2A handler is concatenating `function_response` parts. Verify routes still skip dicts containing an `error` key. |
+| Cold-start request times out | `httpx.AsyncClient(timeout=30.0)` in orchestrator routes. Bump to 60 s for HF Spaces / Render free tier. |
 
 ## License
 
-Proprietary - All rights reserved
-
-## Support
-
-For issues, questions, or feature requests, please contact the development team or open an issue in the project repository.
-
-## Acknowledgments
-
-Built with Google Agent Development Kit (ADK) and powered by Gemini 2.5 Flash Lite models.
+Proprietary — all rights reserved.
