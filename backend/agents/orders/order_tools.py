@@ -8,7 +8,7 @@ import math
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from shared.supabase_client import get_supabase_client
+from shared.supabase_client import get_supabase_client, sanitize_filter_term
 
 
 def create_purchase_order(supplier: str, items: str, delivery_date: str) -> str:
@@ -45,7 +45,7 @@ def create_purchase_order(supplier: str, items: str, delivery_date: str) -> str:
             results = client.query(
                 "inventory",
                 select="name,price,category",
-                filters={"sku": f"ilike.{sku}"}
+                filters={"sku": f"ilike.{sanitize_filter_term(sku)}"}
             )
             
             if results:
@@ -117,7 +117,7 @@ def check_supplier_catalog(supplier_name: str, product_type: Optional[str] = Non
             results = client.query(
                 "inventory",
                 select="name,sku,quantity,price,category,location",
-                filters={"category": f"ilike.{product_type}"},
+                filters={"category": f"ilike.{sanitize_filter_term(product_type)}"},
                 order="price.asc",
                 limit=20
             )
@@ -317,7 +317,7 @@ def validate_supplier_compliance(supplier_id: str) -> str:
             else:
                 filters = {"supplier_id": f"eq.{supplier_id}"}
         else:
-            filters = {"name": f"ilike.*{supplier_id}*"}
+            filters = {"name": f"ilike.*{sanitize_filter_term(supplier_id)}*"}
         
         supplier_results = client.query(
             "suppliers",
@@ -406,28 +406,63 @@ def calculate_optimal_order_quantity(sku: str) -> str:
         results = client.query(
             "inventory",
             select="name,sku,quantity,price,category",
-            filters={"sku": f"ilike.{sku}"}
+            filters={"sku": f"ilike.{sanitize_filter_term(sku)}"}
         )
-        
+
         if not results:
             return f"Product with SKU '{sku}' not found."
         
         item = results[0]
         current_stock = item['quantity']
         unit_cost = float(item['price'])
-        
-        # EOQ formula: sqrt((2 * annual_demand * order_cost) / holding_cost_per_unit)
-        # Assumptions for calculation:
-        estimated_annual_demand = max(current_stock * 12, 100)  # Estimate based on current stock
+
+        # Estimate annual demand from the past 12 months of purchase orders.
+        cutoff = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        try:
+            po_history = client.query(
+                "purchase_orders",
+                select="items,order_date",
+                filters={"order_date": f"gte.{cutoff}"},
+                limit=200,
+            )
+        except Exception:
+            po_history = []
+
+        po_demand = 0
+        po_count = 0
+        for po in po_history:
+            line_items = po.get("items") or []
+            if isinstance(line_items, str):
+                try:
+                    line_items = json.loads(line_items)
+                except Exception:
+                    line_items = []
+            for line in line_items:
+                if str(line.get("sku") or "").upper() == str(item["sku"]).upper():
+                    po_demand += int(line.get("quantity") or 0)
+                    po_count += 1
+
+        if po_demand >= 1:
+            estimated_annual_demand = po_demand
+            demand_basis = (
+                f"derived from {po_count} purchase-order line(s) in the last 365 days"
+            )
+        else:
+            estimated_annual_demand = max(current_stock * 12, 100)
+            demand_basis = (
+                "HEURISTIC: no purchase-order history found, falling back to "
+                "current_stock * 12 — treat as approximate"
+            )
+
         order_cost = 50  # Fixed cost per order
         holding_cost_rate = 0.25  # 25% of unit cost per year
         holding_cost_per_unit = unit_cost * holding_cost_rate
-        
+
         if holding_cost_per_unit > 0:
             eoq = math.sqrt((2 * estimated_annual_demand * order_cost) / holding_cost_per_unit)
-            eoq = int(eoq)
+            eoq = max(1, int(eoq))
         else:
-            eoq = estimated_annual_demand // 12  # Fallback: monthly demand
+            eoq = max(1, estimated_annual_demand // 12)
         
         orders_per_year = estimated_annual_demand / eoq if eoq > 0 else 12
         total_ordering_cost = orders_per_year * order_cost
@@ -446,7 +481,7 @@ def calculate_optimal_order_quantity(sku: str) -> str:
         output.append(f"  Unit Cost: ${unit_cost:.2f}")
         output.append("")
         output.append("Assumptions:")
-        output.append(f"  Estimated Annual Demand: {estimated_annual_demand:,.0f} units")
+        output.append(f"  Estimated Annual Demand: {estimated_annual_demand:,.0f} units ({demand_basis})")
         output.append(f"  Order Cost: ${order_cost:.2f} per order")
         output.append(f"  Holding Cost Rate: {holding_cost_rate*100:.0f}% per year")
         output.append(f"  Holding Cost per Unit: ${holding_cost_per_unit:.2f}/year")
@@ -494,21 +529,22 @@ def find_supplier_for_product(product_name_or_sku: str) -> str:
         
         # Try to find product in inventory to get exact SKU and Name
         # Using a broad search first
+        sanitized_term = sanitize_filter_term(product_name_or_sku)
         inventory_results = client.query(
             "inventory",
             select="name,sku",
             filters={
-                "sku": f"ilike.{product_name_or_sku}"
+                "sku": f"ilike.{sanitized_term}"
             },
             limit=1
         )
-        
+
         if not inventory_results:
-             inventory_results = client.query(
+            inventory_results = client.query(
                 "inventory",
                 select="name,sku",
                 filters={
-                    "name": f"ilike.%{product_name_or_sku}%"
+                    "name": f"ilike.%{sanitized_term}%"
                 },
                 limit=1
             )

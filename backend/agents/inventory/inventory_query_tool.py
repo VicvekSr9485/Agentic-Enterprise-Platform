@@ -4,24 +4,27 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from shared.supabase_client import get_supabase_client
+from shared.supabase_client import get_supabase_client, sanitize_filter_term
+from shared.logging_utils import get_logger
+
+logger = get_logger("agents.inventory.tool")
 
 
 def query_inventory(search_term: str) -> str:
     """
     Search inventory database for products matching the search term.
-    
+
     Args:
         search_term: Product name, SKU, or category to search for
-        
+
     Returns:
         Formatted string with product information
     """
     try:
-        print(f"[INVENTORY TOOL] Searching for: '{search_term}'")
+        logger.info("inventory_search", term=search_term[:80])
         client = get_supabase_client()
-        
-        term = (search_term or "").strip().lower()
+
+        term = sanitize_filter_term((search_term or "").strip().lower())
         
         # Build PostgREST filters for flexible search
         # PostgREST uses format: column=operator.value
@@ -69,7 +72,7 @@ def query_inventory(search_term: str) -> str:
                     )
                     results.extend(cat_results)
                 except Exception as e:
-                    print(f"[INVENTORY TOOL] Search pattern '{pattern}' failed: {e}")
+                    logger.warning("inventory_pattern_failed", pattern=pattern, error=str(e))
                     continue
         else:
             # No search term, return all products
@@ -89,9 +92,9 @@ def query_inventory(search_term: str) -> str:
                 unique_results.append(item)
         
         results = unique_results[:10]  # Limit to top 10
-        
-        print(f"[INVENTORY TOOL] Found {len(results)} unique results")
-        
+
+        logger.info("inventory_results", count=len(results))
+
         if not results:
             return f"No products found matching '{search_term}'. Try a different search term or check spelling."
         
@@ -111,9 +114,8 @@ def query_inventory(search_term: str) -> str:
         return summary + "\n".join(output)
         
     except Exception as e:
-        error_msg = str(e)
-        print(f"[INVENTORY TOOL] Error: {error_msg}")
-        return f"Error querying inventory: {error_msg}"
+        logger.warning("inventory_query_error", error=str(e))
+        return f"Error querying inventory: {str(e)}"
 
 
 def get_all_categories() -> str:

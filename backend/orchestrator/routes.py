@@ -1,10 +1,10 @@
 import json
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 import uuid
 import asyncio
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google.adk.runners import Runner
 from google.adk.events import Event
 from google.genai import types
@@ -21,6 +21,10 @@ import time
 
 from shared.agent_metrics import agent_metrics
 from shared.retry_handler import get_retry_handler, async_retry_with_backoff, RetryConfig
+from shared.logging_utils import get_logger, safe_preview
+from shared.observability import trace_span
+
+logger = get_logger("orchestrator.routes")
 
 router = APIRouter()
 
@@ -31,10 +35,15 @@ orchestrator_agent = create_orchestrator()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 intent_classifier_model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
+MAX_PROMPT_CHARS = int(os.getenv("MAX_PROMPT_CHARS", "8000"))
+MAX_SESSION_ID_CHARS = 128
+
+
 class ChatRequest(BaseModel):
-    prompt: str
-    session_id: str
-    context: dict = {}
+    prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
+    session_id: str = Field(min_length=1, max_length=MAX_SESSION_ID_CHARS)
+    context: dict = Field(default_factory=dict)
+
 
 class ChatResponse(BaseModel):
     response: str
@@ -44,52 +53,66 @@ class ChatResponse(BaseModel):
     approval_type: str | None = None
 
 @router.post("/chat")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, http_request: Request):
+    # user_id and request_id are populated by auth + request-id middleware.
+    user_id = getattr(http_request.state, "user_id", "default_user")
+    request_id = getattr(http_request.state, "request_id", None)
+    log = logger.bind(session_id=request.session_id, user_id=user_id, request_id=request_id)
+
     try:
+
         user_input_lower = request.prompt.lower().strip()
-        pending_approval = hitl_manager.get_pending_approval(request.session_id)
+        pending_approval = hitl_manager.get_pending_approval(request.session_id, user_id=user_id)  # noqa: E501  user_id used after Batch B HITL update
         
         if pending_approval and user_input_lower in ["yes", "approve", "send", "confirm"]:
-            approval = hitl_manager.approve(request.session_id)
-            
-            if approval.action_type == "email_send":
+            approval = hitl_manager.approve(request.session_id, user_id=user_id)
+
+            if approval and approval.action_type == "email_send":
                 draft = approval.draft_content
-                
+
                 to_match = re.search(r'To:\s*(.+)', draft)
                 subject_match = re.search(r'Subject:\s*(.+)', draft)
-                
+
                 if to_match and subject_match:
                     to_email = to_match.group(1).strip()
                     subject = subject_match.group(1).strip()
-                    
+
                     body_start = draft.find(subject) + len(subject)
                     body_end = draft.find('---')
                     if body_end == -1:
                         body_end = len(draft)
                     body = draft[body_start:body_end].strip()
-                    
+
                     send_result = send_email(to_email, subject, body)
-                    
+
                     return ChatResponse(
                         response=f"Approved! Email sent.\n\n{send_result}\n\n{approval.draft_content}",
                         session_id=request.session_id,
-                        trace_id="approval_confirmed",
+                        trace_id=request_id or "approval_confirmed",
                         pending_approval=False
                     )
-            
+
             return ChatResponse(
-                response=f"Approved! {approval.action_type} has been executed.\n\n{approval.draft_content}",
+                response=(
+                    f"Approved! {approval.action_type} has been executed.\n\n{approval.draft_content}"
+                    if approval
+                    else "No pending approval was found for this session."
+                ),
                 session_id=request.session_id,
-                trace_id="approval_confirmed",
+                trace_id=request_id or "approval_confirmed",
                 pending_approval=False
             )
-        
+
         elif pending_approval and user_input_lower in ["no", "reject", "cancel", "deny"]:
-            approval = hitl_manager.reject(request.session_id)
+            approval = hitl_manager.reject(request.session_id, user_id=user_id)
             return ChatResponse(
-                response=f"Cancelled. The {approval.action_type} was not executed.",
+                response=(
+                    f"Cancelled. The {approval.action_type} was not executed."
+                    if approval
+                    else "No pending approval was found for this session."
+                ),
                 session_id=request.session_id,
-                trace_id="approval_rejected",
+                trace_id=request_id or "approval_rejected",
                 pending_approval=False
             )
         
@@ -110,11 +133,11 @@ async def chat_endpoint(request: ChatRequest):
             return ChatResponse(
                 response=conversational_responses.get(user_input_lower, "I'm here to help. What would you like to do?"),
                 session_id=request.session_id,
-                trace_id="conversational_response",
+                trace_id=request_id or "conversational_response",
                 pending_approval=False
             )
         
-        print(f"[ORCHESTRATOR] Classifying intent for: {request.prompt[:100]}...")
+        logger.info("intent_classifying", prompt_preview=safe_preview(request.prompt, 80))
         classification_prompt = INTENT_CLASSIFICATION_PROMPT.format(user_prompt=request.prompt)
         
         intent_classification = None
@@ -132,46 +155,42 @@ async def chat_endpoint(request: ChatRequest):
         try:
             llm_response = await asyncio.wait_for(classify_intent(), timeout=15.0)
             intent_classification = parse_intent_from_llm_response(llm_response.text)
-            
+
             if intent_classification:
-                print(f"[ORCHESTRATOR] Intent classification:")
-                print(f"  - Summary: {intent_classification.user_intent_summary}")
-                print(f"  - Agents needed: {[a.agent_name for a in intent_classification.agents_needed]}")
-                print(f"  - Coordination required: {intent_classification.requires_coordination}")
-                for agent in intent_classification.agents_needed:
-                    print(f"  - {agent.agent_name}: {agent.targeted_prompt[:100]}... (Reason: {agent.reason})")
+                logger.info(
+                    "intent_classified",
+                    summary=intent_classification.user_intent_summary,
+                    agents=[a.agent_name for a in intent_classification.agents_needed],
+                    requires_coordination=intent_classification.requires_coordination,
+                )
             else:
-                print(f"[ORCHESTRATOR] Intent classification failed, falling back to LLM orchestrator")
+                logger.warning("intent_classification_failed_fallback")
                 intent_classification = None
         except asyncio.TimeoutError:
-            print(f"[ORCHESTRATOR] Intent classification timeout (10s), falling back to LLM orchestrator")
+            logger.warning("intent_classification_timeout", timeout_seconds=15.0)
             intent_classification = None
         except Exception as e:
-            print(f"[ORCHESTRATOR] Intent classification error: {e}, falling back to LLM orchestrator")
+            logger.warning("intent_classification_error", error=str(e))
             intent_classification = None
         
         session = None
         try:
             session = await session_service.get_session(
                 app_name="agents",
-                user_id="default_user",
+                user_id=user_id,
                 session_id=request.session_id
             )
             if session is None:
                 raise ValueError("Session returned None")
-            print(f"Found existing session: {request.session_id}")
-            print(f"  Session details: app={session.app_name}, user={session.user_id}, id={session.id}")
-        except Exception as e:
-            print(f"Session not found or invalid, creating: {request.session_id}")
+            logger.info("session_loaded", session_id=session.id, user_id=user_id)
+        except Exception:
+            logger.info("session_creating", session_id=request.session_id, user_id=user_id)
             session = await session_service.create_session(
                 app_name="agents",
-                user_id="default_user",
+                user_id=user_id,
                 session_id=request.session_id
             )
-            print(f"Session created: {session.id}")
-            print(f"  Session details: app={session.app_name}, user={session.user_id}, id={session.id}")
-        
-        print(f"Session service DB URL: {session_service._db_url if hasattr(session_service, '_db_url') else 'unknown'}")
+            logger.info("session_created", session_id=session.id, user_id=user_id)
         
         async def get_conversation_context() -> str:
             """
@@ -214,14 +233,12 @@ async def chat_endpoint(request: ChatRequest):
                 return ""
                 
             except Exception as e:
-                import traceback
-                print(f"[CONTEXT] Error retrieving conversation history: {e}")
-                traceback.print_exc()
+                logger.warning("conversation_context_error", error=str(e))
                 return ""
-        
+
         conversation_context = await get_conversation_context()
         if conversation_context:
-            print(f"[CONTEXT] Retrieved {len(conversation_context)} chars of conversation history")
+            log.debug("conversation_context_retrieved", chars=len(conversation_context))
         
         base_url = os.getenv("BASE_URL", "http://localhost:8000")
         a2a_endpoints = {
@@ -238,39 +255,20 @@ async def chat_endpoint(request: ChatRequest):
         }
 
         def _sanitize(text: str) -> str:
+            """Light cleanup of sub-agent output.
+
+            The previous version filtered any line containing phrases like
+            "please contact" or "would you like me to proceed", which struck
+            out legitimate replies. We now only strip wrapping quotes — trust
+            the agent to produce final text.
+            """
             if not text:
                 return text
-            lower = text.lower()
-            patterns = [
-                "i cannot provide information",
-                "i do not have access",
-                "outside of my",
-                "outside my",
-                "i cannot check",
-                "i cannot draft",
-                "i cannot send",
-                "limited to my",
-                "please contact",
-                "please check",
-                "would you like me to proceed",
-                "nor can i",
-            ]
-            lines = []
-            for ln in text.splitlines():
-                ln_lower = ln.lower()
-                if any(p in ln_lower for p in patterns):
-                    continue
-                if ln_lower.strip().endswith("?") and any(k in ln_lower for k in ["would you", "should i", "proceed"]):
-                    continue
-                lines.append(ln)
-            result = "\n".join([ln for ln in lines if ln.strip()])
-            cleaned = result.strip()
-            
+            cleaned = text.strip()
             if cleaned.startswith('"') and cleaned.endswith('"'):
                 cleaned = cleaned[1:-1]
             if cleaned.startswith("'") and cleaned.endswith("'"):
                 cleaned = cleaned[1:-1]
-            
             return cleaned
 
         retry_config = RetryConfig(
@@ -300,17 +298,18 @@ async def chat_endpoint(request: ChatRequest):
                     },
                 },
             }
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.post(url, json=payload)
-                r.raise_for_status()
-                data = r.json()
+
+            with trace_span("a2a.call", url=url, prompt_chars=len(prompt)):
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    r = await client.post(url, json=payload)
+                    r.raise_for_status()
+                    data = r.json()
                 
                 if "error" in data:
                     error_msg = data["error"].get("message", "Unknown error")
                     if "429" in error_msg or "rate limit" in error_msg.lower() or "quota" in error_msg.lower():
                         raise Exception(f"Rate limit error: {error_msg}")
-                    print(f"[ORCHESTRATOR] Agent returned error: {error_msg}")
+                    logger.warning("a2a_agent_error", error=error_msg)
                     return f"Error from agent: {error_msg}"
 
                 try:
@@ -318,7 +317,7 @@ async def chat_endpoint(request: ChatRequest):
                     texts = [p.get("text", "") for p in parts if p.get("kind") == "text"]
                     return _sanitize("\n".join(t for t in texts if t))
                 except Exception as e:
-                    print(f"[ORCHESTRATOR] Error extracting text: {e}")
+                    logger.warning("a2a_response_extract_error", error=str(e))
                     return _sanitize(json.dumps(data))
 
         used_intelligent_routing = False
@@ -327,33 +326,36 @@ async def chat_endpoint(request: ChatRequest):
 
         if intent_classification and intent_classification.agents_needed:
             used_intelligent_routing = True
-            print(f"[ORCHESTRATOR] Using intelligent routing with {len(intent_classification.agents_needed)} agent(s)")
-            print(f"[ORCHESTRATOR] Coordination mode: {'SEQUENTIAL' if intent_classification.requires_coordination else 'PARALLEL'}")
-            
+            log.info(
+                "intelligent_routing",
+                agent_count=len(intent_classification.agents_needed),
+                coordination="sequential" if intent_classification.requires_coordination else "parallel",
+            )
+
             data_blocks = []
             notification_task = None
-            
+
             if not intent_classification.requires_coordination and len(intent_classification.agents_needed) > 1:
                 non_notification_tasks = [a for a in intent_classification.agents_needed if a.agent_name not in ["notification", "notification_specialist"]]
-                
+
                 if len(non_notification_tasks) > 1:
-                    print(f"[ORCHESTRATOR] Executing {len(non_notification_tasks)} data agents in PARALLEL")
-                    
+                    log.info("parallel_data_agents", count=len(non_notification_tasks))
+
                     tasks = []
                     for agent_intent in non_notification_tasks:
                         if agent_intent.agent_name in a2a_endpoints:
                             enriched_prompt = agent_intent.targeted_prompt
-                            
+
                             if conversation_context:
                                 enriched_prompt = conversation_context + enriched_prompt
                             tasks.append(call_a2a(a2a_endpoints[agent_intent.agent_name], enriched_prompt))
-                    
+
                     if tasks:
                         results = await asyncio.gather(*tasks, return_exceptions=True)
                         for i, result in enumerate(results):
                             agent_name = non_notification_tasks[i].agent_name
                             if isinstance(result, Exception):
-                                print(f"[ORCHESTRATOR] Parallel task {i} failed: {result}")
+                                log.warning("parallel_task_failed", index=i, error=str(result))
                                 data_blocks.append({
                                     "agent": agent_name,
                                     "content": f"Error: {result}",
@@ -369,39 +371,35 @@ async def chat_endpoint(request: ChatRequest):
                                 })
                     
                     notification_task = next((a for a in intent_classification.agents_needed if a.agent_name in ["notification", "notification_specialist"]), None)
-                else:
-                    print(f"[ORCHESTRATOR] Only 1 data agent, using standard sequential flow")
-            
+
             if not data_blocks:
-                print(f"[ORCHESTRATOR] Using SEQUENTIAL execution")
-                
                 # First, call all data agents (non-notification)
                 for agent_intent in intent_classification.agents_needed:
                     agent_name = agent_intent.agent_name
                     if agent_name in ["notification", "notification_specialist"]:
                         notification_task = agent_intent
-                        print(f"[ORCHESTRATOR] Notification task queued: {agent_intent.reason}")
+                        log.info("notification_queued", reason=agent_intent.reason)
                         continue
-                    
+
                     if agent_name in a2a_endpoints:
-                        # CRITICAL: Always use targeted_prompt from intent classifier.
-                        # It properly extracts agent-specific tasks and removes cross-agent confusion.
-                        # Example: For inventory: "get available documents" NOT "get docs and send email"
+                        # Always use targeted_prompt from intent classifier — it scopes to one agent.
                         targeted_prompt = agent_intent.targeted_prompt
-                        
-                        # Enrich prompt with conversation context for context-aware follow-ups
                         if conversation_context:
                             targeted_prompt = conversation_context + targeted_prompt
                         reason = agent_intent.reason
-                        print(f"[ORCHESTRATOR] Calling {agent_name}: {targeted_prompt[:80]}...")
-                        print(f"  Reason: {reason}")
+                        log.info(
+                            "a2a_call_start",
+                            agent=agent_name,
+                            prompt_preview=safe_preview(targeted_prompt, 80),
+                            reason=reason,
+                        )
                         start_time = time.time()
                         try:
                             result = await call_a2a(a2a_endpoints[agent_name], targeted_prompt)
                             latency_ms = (time.time() - start_time) * 1000
-                            
+
                             if result:
-                                print(f"[ORCHESTRATOR] Got {agent_name} response ({len(result)} chars) in {latency_ms:.0f}ms")
+                                log.info("a2a_call_ok", agent=agent_name, chars=len(result), latency_ms=int(latency_ms))
                                 data_blocks.append({
                                     "agent": agent_name,
                                     "content": result.strip(),
@@ -410,11 +408,11 @@ async def chat_endpoint(request: ChatRequest):
                                 })
                                 agent_metrics.record_agent_call(agent_name, request.session_id, True, latency_ms)
                             else:
-                                print(f"[ORCHESTRATOR] {agent_name} returned empty response")
+                                log.warning("a2a_call_empty", agent=agent_name, latency_ms=int(latency_ms))
                                 agent_metrics.record_agent_call(agent_name, request.session_id, False, latency_ms, error="Empty response")
                         except Exception as e:
                             latency_ms = (time.time() - start_time) * 1000
-                            print(f"[ORCHESTRATOR] Error calling {agent_name}: {e}")
+                            log.warning("a2a_call_error", agent=agent_name, error=str(e), latency_ms=int(latency_ms))
                             data_blocks.append({
                                 "agent": agent_name,
                                 "content": f"Error: {str(e)}",
@@ -422,11 +420,7 @@ async def chat_endpoint(request: ChatRequest):
                                 "error": True
                             })
                             agent_metrics.record_agent_call(agent_name, request.session_id, False, latency_ms, error=str(e))
-            else:
-                # data_blocks already populated from parallel execution
-                pass
-            
-            print(f"[ORCHESTRATOR] Collected {len(data_blocks)} data blocks")
+            log.info("data_blocks_collected", count=len(data_blocks))
             
             if notification_task:
                 # Start with conversation context if it exists
@@ -446,32 +440,28 @@ async def chat_endpoint(request: ChatRequest):
                             context_parts.append(str(block))
                     
                     enriched_prompt = f"{base_prompt}\n\n[Context from other agents:]\n" + "\n\n".join(context_parts)
-                    
-                    # Add conversation history context
+
                     if conversation_context:
                         enriched_prompt = conversation_context + enriched_prompt
-                    
-                    print(f"[ORCHESTRATOR] Calling notification with enriched context ({len(enriched_prompt)} chars)")
-                    print(f"[ORCHESTRATOR] Enriched prompt preview: {enriched_prompt[:500]}...")
+
+                    log.info("notification_call", chars=len(enriched_prompt))
                 else:
                     enriched_prompt = base_prompt
-                    
-                    # Add conversation history context even without data blocks
+
                     if conversation_context:
                         enriched_prompt = conversation_context + enriched_prompt
-                    
-                    print(f"[ORCHESTRATOR] Calling notification with context ({len(enriched_prompt)} chars)")
-                
+
+                    log.info("notification_call", chars=len(enriched_prompt))
+
                 try:
                     notif_result = await call_a2a(a2a_endpoints["notification"], enriched_prompt)
                     if notif_result:
                         response_text = notif_result.strip()
                     else:
-                        # Extract content from data_blocks dictionaries
                         response_parts = [block.get('content', '') if isinstance(block, dict) else str(block) for block in data_blocks]
                         response_text = "\n\n".join(response_parts).strip() if data_blocks else "No response from notification agent."
                 except Exception as e:
-                    print(f"[ORCHESTRATOR] Error calling notification: {e}")
+                    log.warning("notification_call_error", error=str(e))
                     # Extract content from data_blocks dictionaries
                     response_parts = [block.get('content', '') if isinstance(block, dict) else str(block) for block in data_blocks]
                     response_text = "\n\n".join(response_parts).strip() if data_blocks else f"Error: {e}"
@@ -502,9 +492,7 @@ async def chat_endpoint(request: ChatRequest):
                     session=session,
                     event=user_event
                 )
-                print(f"[SESSION] Stored user message in session {session.id}")
-                
-                # Add agent response to session
+
                 agent_event = Event(
                     author="orchestrator",
                     content=types.Content(
@@ -516,16 +504,12 @@ async def chat_endpoint(request: ChatRequest):
                     session=session,
                     event=agent_event
                 )
-                print(f"[SESSION] Stored agent response in session {session.id}")
-                
-                # Save session to memory for long-term retention
+
                 await memory_service.add_session_to_memory(session)
-                print(f"[MEMORY] Saved session {session.id} to memory")
-                
+                log.debug("session_persisted", session_id=session.id)
+
             except Exception as e:
-                import traceback
-                print(f"[SESSION] Error storing events: {e}")
-                traceback.print_exc()
+                log.warning("session_persist_error", error=str(e))
 
         if not used_intelligent_routing:
             runner = Runner(
@@ -540,9 +524,9 @@ async def chat_endpoint(request: ChatRequest):
                 parts=[types.Part(text=request.prompt)]
             )
 
-            print(f"Starting run_async for session {request.session_id}")
+            log.info("runner_starting")
             events_async = runner.run_async(
-                user_id="default_user",
+                user_id=user_id,
                 session_id=request.session_id,
                 new_message=message_content
             )
@@ -550,13 +534,12 @@ async def chat_endpoint(request: ChatRequest):
             event_count = 0
             async for event in events_async:
                 event_count += 1
-                print(f"Event {event_count}: author={event.author}")
                 if event.content and event.content.parts:
                     for part in event.content.parts:
                         if part.text:
                             response_text += part.text
 
-            print(f"Completed with {event_count} events, response length: {len(response_text)}")
+            log.info("runner_complete", events=event_count, response_chars=len(response_text))
         
         pending_approval = False
         approval_type = None
@@ -588,31 +571,29 @@ async def chat_endpoint(request: ChatRequest):
                     agent_name="notification_specialist",
                     action_type="email_send",
                     draft_content=response_text,
-                    metadata={"timestamp": event_count}
+                    metadata={"event_count": event_count},
+                    user_id=user_id,
                 )
-        
+
         return ChatResponse(
             response=response_text,
             session_id=request.session_id,
-            trace_id="success",
+            trace_id=request_id or "success",
             pending_approval=pending_approval,
             approval_type=approval_type
         )
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in chat_endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        error_context = {
-            "session_id": request.session_id if hasattr(request, 'session_id') else None,
-            "prompt_length": len(request.prompt) if hasattr(request, 'prompt') else 0,
-            "error_type": type(e).__name__
-        }
-        print(f"Error context: {error_context}")
-        
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "chat_endpoint_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            session_id=getattr(request, "session_id", None),
+            prompt_length=len(request.prompt) if hasattr(request, "prompt") else 0,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Internal error processing chat request")
 
 @router.get("/.well-known/agent-card.json")
 async def get_agent_card():

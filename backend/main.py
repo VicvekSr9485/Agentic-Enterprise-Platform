@@ -1,5 +1,16 @@
+"""
+Enterprise Agents Platform - FastAPI entrypoint.
+
+Wires up middleware (CORS, auth, request-id), observability (structlog,
+optional OpenTelemetry), and routers for the orchestrator and each
+specialized worker agent.
+"""
+
+from __future__ import annotations
+
 import os
-import sys
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -10,13 +21,15 @@ from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from shared.observability import (
     configure_structured_logging,
     setup_opentelemetry,
     create_agent_metrics,
-    logger
 )
+from shared.logging_utils import get_logger
+from shared.auth import bearer_auth_middleware, derive_user_id
 
 from orchestrator.routes import router as orchestrator_router
 from agents.inventory.routes import router as inventory_router
@@ -28,8 +41,21 @@ from agents.orders.routes import router as orders_router
 load_dotenv()
 
 configure_structured_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
+logger = get_logger("main")
 
-limiter = Limiter(key_func=get_remote_address)
+
+def _rate_limit_key(request: Request) -> str:
+    """Use bearer-token-derived user_id when available, fall back to IP."""
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return f"user:{user_id}"
+    return get_remote_address(request)
+
+
+limiter = Limiter(
+    key_func=_rate_limit_key,
+    default_limits=[os.getenv("DEFAULT_RATE_LIMIT", "60/minute")],
+)
 
 tracer: Optional[object] = None
 meter: Optional[object] = None
@@ -38,142 +64,139 @@ metrics: Optional[dict] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifespan manager for startup and shutdown events.
-    """
-    logger.info("Starting Enterprise Agents Platform...")
-    
+    logger.info("platform_starting")
+
     global tracer, meter, metrics
     if os.getenv("ENABLE_OTEL", "false").lower() == "true":
         tracer, meter = setup_opentelemetry(
             service_name=os.getenv("OTEL_SERVICE_NAME", "enterprise-agents-platform"),
-            otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+            otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
         )
-        
         if meter:
             metrics = create_agent_metrics(meter)
-            logger.info("Metrics collection enabled")
-    
+            logger.info("metrics_enabled")
+
     logger.info(
-        "Configuration loaded",
-        base_url=os.getenv("BASE_URL", "http://localhost:8000"),
-        session_persistence=os.getenv("ENABLE_SESSION_PERSISTENCE", "true"),
-        memory=os.getenv("ENABLE_MEMORY", "true"),
-        hitl=os.getenv("ENABLE_HITL", "true")
-    )
-    
-    logger.info(
-        "Platform initialized",
+        "platform_ready",
         agents=["orchestrator", "inventory", "policy", "analytics", "orders", "notification"],
         architecture="modular_monolith",
-        protocol="a2a"
+        protocol="a2a",
+        auth_enabled=bool(os.getenv("PLATFORM_API_KEY")),
+        otel_enabled=os.getenv("ENABLE_OTEL", "false").lower() == "true",
     )
-    
+
     yield
-    
-    logger.info("Shutting down Enterprise Agents Platform...")
-    
-    logger.info("Shutdown complete")
+
+    logger.info("platform_shutdown")
+
 
 app = FastAPI(
     title="Enterprise Agents Platform",
     description=(
         "A Level 3 Modular Monolith Agent Swarm built with Google ADK. "
-        "Provides enterprise business workflow automation with six specialized agents: "
-        "Orchestrator (with Memory), Inventory Agent, Policy Agent, Analytics Agent, "
-        "Order Management Agent, and Notification Agent (with HITL workflow). "
-        "All agents support session persistence and communicate via A2A Protocol."
+        "Provides enterprise business workflow automation with six specialized agents."
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ---------------------------------------------------------------- middleware
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Attach request_id (and a placeholder user_id) to every request."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        # user_id is set by bearer_auth_middleware below; default for unauth/health.
+        if not getattr(request.state, "user_id", None):
+            request.state.user_id = derive_user_id(None)
+
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            "request_complete",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            duration_ms=int(duration_ms),
+            user_id=getattr(request.state, "user_id", None),
+        )
+        return response
+
+
+app.add_middleware(RequestContextMiddleware)
+app.middleware("http")(bearer_auth_middleware)
+
+
+def _parse_origins(value: str | None) -> list[str]:
+    if not value:
+        return ["http://localhost:5173", "http://localhost:3000"]
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+cors_origins = _parse_origins(os.getenv("CORS_ORIGINS"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://agentic-enterprise-platform.vercel.app", "http://localhost:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
 
 
+# --------------------------------------------------------------- exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """
-    Global exception handler for structured error responses.
-    """
     logger.error(
-        "Unhandled exception",
+        "unhandled_exception",
         path=request.url.path,
         method=request.method,
+        request_id=getattr(request.state, "request_id", None),
         error=str(exc),
-        exc_info=True
+        error_type=type(exc).__name__,
+        exc_info=True,
     )
-    
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "error": "Internal Server Error",
             "message": "An unexpected error occurred. Please try again later.",
-            "path": request.url.path
-        }
+            "request_id": getattr(request.state, "request_id", None),
+            "path": request.url.path,
+        },
     )
 
 
+# ------------------------------------------------------------------ public endpoints
 @app.get("/", tags=["Health"])
 @limiter.limit("100/minute")
 async def root(request: Request):
-    """
-    Root endpoint - Platform status overview.
-    """
     return {
         "status": "online",
         "platform": "Enterprise Agents Platform",
         "architecture": "modular_monolith",
-        "version": "1.0.0",
-        "agents": {
-            "orchestrator": {
-                "status": "active",
-                "role": "coordinator",
-                "model": "gemini-1.5-flash-lite",
-                "capabilities": ["memory", "a2a_client", "context_aggregation"]
-            },
-            "inventory": {
-                "status": "active",
-                "role": "worker",
-                "model": "gemini-1.5-flash-lite",
-                "capabilities": ["session_persistence", "mcp_database", "read_only_sql"]
-            },
-            "policy": {
-                "status": "active",
-                "role": "worker",
-                "model": "gemini-1.5-flash-lite",
-                "capabilities": ["session_persistence", "mcp_rag", "vector_search"]
-            },
-            "analytics": {
-                "status": "active",
-                "role": "worker",
-                "model": "gemini-1.5-flash-lite",
-                "capabilities": ["session_persistence", "trend_analysis", "forecasting", "reporting"]
-            },
-            "orders": {
-                "status": "active",
-                "role": "worker",
-                "model": "gemini-1.5-flash-lite",
-                "capabilities": ["session_persistence", "purchase_orders", "supplier_management", "procurement"]
-            },
-            "notification": {
-                "status": "active",
-                "role": "worker",
-                "model": "gemini-1.5-flash-lite",
-                "capabilities": ["session_persistence", "mcp_smtp", "hitl_workflow"]
-            }
-        },
+        "version": "1.1.0",
+        "auth_required": bool(os.getenv("PLATFORM_API_KEY")),
+        "agents": [
+            "orchestrator",
+            "inventory",
+            "policy",
+            "analytics",
+            "orders",
+            "notification",
+        ],
         "protocols": ["a2a", "mcp"],
         "endpoints": {
             "orchestrator": "/orchestrator",
@@ -183,76 +206,43 @@ async def root(request: Request):
             "orders": "/orders",
             "notification": "/notification",
             "docs": "/docs",
-            "health": "/health"
-        }
+            "health": "/health",
+        },
     }
 
 
 @app.get("/health", tags=["Health"])
 @limiter.limit("100/minute")
 async def health_check(request: Request):
-    """
-    Kubernetes-style health check endpoint.
-    """
     import psutil
-    
+
     cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
-    
+
     return {
         "status": "healthy",
         "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
         "system": {
             "cpu_percent": cpu_percent,
             "memory_percent": memory.percent,
-            "memory_available_mb": memory.available / (1024 * 1024)
-        }
+            "memory_available_mb": memory.available / (1024 * 1024),
+        },
     }
 
 
 @app.get("/ready", tags=["Health"])
 @limiter.limit("100/minute")
 async def readiness_check(request: Request):
-    """
-    Kubernetes readiness probe - checks if service can accept traffic.
-    """
     return {"status": "ready"}
 
-app.include_router(
-    orchestrator_router,
-    prefix="/orchestrator",
-    tags=["Orchestrator"]
-)
 
-app.include_router(
-    inventory_router,
-    prefix="/inventory",
-    tags=["Inventory Agent"]
-)
-
-app.include_router(
-    policy_router,
-    prefix="/policy",
-    tags=["Policy Agent"]
-)
-
-app.include_router(
-    analytics_router,
-    prefix="/analytics",
-    tags=["Analytics Agent"]
-)
-
-app.include_router(
-    orders_router,
-    prefix="/orders",
-    tags=["Order Management Agent"]
-)
-
-app.include_router(
-    notification_router,
-    prefix="/notification",
-    tags=["Notification Agent"]
-)
+# ------------------------------------------------------------------- routers
+app.include_router(orchestrator_router, prefix="/orchestrator", tags=["Orchestrator"])
+app.include_router(inventory_router, prefix="/inventory", tags=["Inventory Agent"])
+app.include_router(policy_router, prefix="/policy", tags=["Policy Agent"])
+app.include_router(analytics_router, prefix="/analytics", tags=["Analytics Agent"])
+app.include_router(orders_router, prefix="/orders", tags=["Order Management Agent"])
+app.include_router(notification_router, prefix="/notification", tags=["Notification Agent"])
 
 
 if __name__ == "__main__":
@@ -261,19 +251,14 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
     reload = os.getenv("ENVIRONMENT", "development") == "development"
-    
-    logger.info(
-        "Starting Uvicorn server",
-        host=host,
-        port=port,
-        reload=reload
-    )
-    
+
+    logger.info("uvicorn_starting", host=host, port=port, reload=reload)
+
     uvicorn.run(
         "main:app",
         host=host,
         port=port,
         reload=reload,
         log_level=os.getenv("LOG_LEVEL", "info").lower(),
-        access_log=True
+        access_log=False,  # request_complete log replaces access logs
     )

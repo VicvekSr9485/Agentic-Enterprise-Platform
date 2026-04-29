@@ -109,14 +109,12 @@ def create_analytics_agent():
     
     if not os.getenv("SUPABASE_DB_URL"):
         raise ValueError("SUPABASE_DB_URL environment variable not set. Analytics agent requires database access.")
-    
+
     agent = LlmAgent(
         model="gemini-2.5-flash-lite",
         name="analytics_specialist",
         instruction=system_instructions,
         tools=tools
     )
-    
-    return agent
 
-analytics_agent = create_analytics_agent()
+    return agent

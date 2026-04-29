@@ -161,13 +161,17 @@ def parse_intent_from_llm_response(response_text: str) -> Optional[IntentClassif
                     if brace_count == 0:
                         last_valid_pos = i
                         break
-            
+
             if last_valid_pos != -1:
                 text = text[:last_valid_pos + 1]
             else:
-                text += '"' * text.count('"') % 2
-                text += "}" * text.count("{") - text.count("}")
-        
+                # Best-effort repair: close any unbalanced quotes/braces.
+                if text.count('"') % 2 == 1:
+                    text += '"'
+                missing_braces = text.count("{") - text.count("}")
+                if missing_braces > 0:
+                    text += "}" * missing_braces
+
         data = json.loads(text)
         
         return IntentClassification(**data)

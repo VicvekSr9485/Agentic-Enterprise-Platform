@@ -86,10 +86,7 @@ def create_inventory_agent():
     
     4. SECURITY: Never attempt INSERT, UPDATE, DELETE, DROP, or any write operations.
        You have read-only access only.
-    
-    4. SECURITY: Never attempt INSERT, UPDATE, DELETE, DROP, or any write operations.
-       You have read-only access only.
-    
+
     5. SEARCH STRATEGY:
        - Use query_inventory for specific product searches
        - Be flexible with search terms (partial matches work)

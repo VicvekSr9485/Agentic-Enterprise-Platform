@@ -9,15 +9,27 @@ from google.genai import types
 from google.adk.sessions import InMemorySessionService
 import os
 
-from .agent import analytics_agent
+from .agent import create_analytics_agent
+from shared.logging_utils import get_logger
 
+logger = get_logger("agents.analytics.routes")
 router = APIRouter(tags=["analytics"])
 
 stateless_session_service = InMemorySessionService()
+_analytics_agent = None
+
+
+def _get_analytics_agent():
+    global _analytics_agent
+    if _analytics_agent is None:
+        _analytics_agent = create_analytics_agent()
+    return _analytics_agent
+
 
 class A2APart(BaseModel):
     kind: str
     text: Optional[str] = None
+
 
 class A2AMessage(BaseModel):
     kind: str
@@ -27,13 +39,16 @@ class A2AMessage(BaseModel):
     taskId: Optional[str] = None
     contextId: Optional[str] = None
 
+
 class A2AConfiguration(BaseModel):
     acceptedOutputModes: List[str] = []
     blocking: bool = True
 
+
 class A2AParams(BaseModel):
     configuration: A2AConfiguration
     message: A2AMessage
+
 
 class A2ARequest(BaseModel):
     id: str
@@ -41,22 +56,20 @@ class A2ARequest(BaseModel):
     method: str
     params: A2AParams
 
+
 @router.post("/a2a/interact")
 async def handle_task(raw_request: Request):
-    body = await raw_request.body()
-    print(f"[ANALYTICS A2A] Raw request body: {body.decode()}")
-    
     try:
         body_dict = await raw_request.json()
         request = A2ARequest(**body_dict)
         message = request.params.message
     except Exception as e:
-        print(f"[ANALYTICS A2A] Failed to parse request: {e}")
+        logger.warning("analytics_a2a_parse_failed", error=str(e))
         raise HTTPException(status_code=422, detail=str(e))
-    
+
     try:
         session_id = str(uuid.uuid4())
-        print(f"[ANALYTICS A2A] Processing with temporary session: {session_id}")
+        logger.info("analytics_a2a_start", session_id=session_id)
 
         await stateless_session_service.create_session(
             app_name="agents",
@@ -65,7 +78,7 @@ async def handle_task(raw_request: Request):
         )
 
         runner = Runner(
-            agent=analytics_agent,
+            agent=_get_analytics_agent(),
             app_name="agents",
             session_service=stateless_session_service
         )
@@ -75,50 +88,40 @@ async def handle_task(raw_request: Request):
             if part.kind == "text" and part.text:
                 text_parts.append(types.Part(text=part.text))
 
-        message_content = types.Content(
-            role=message.role,
-            parts=text_parts
-        )
+        message_content = types.Content(role=message.role, parts=text_parts)
 
         events_async = runner.run_async(
             user_id="default_user",
             session_id=session_id,
             new_message=message_content
         )
-        
+
         result_text = ""
         function_response_text = ""
         event_count = 0
-        
+
         async for event in events_async:
             event_count += 1
-            print(f"[ANALYTICS A2A] Event {event_count}: has_content={event.content is not None}")
-            if event.content:
-                print(f"[ANALYTICS A2A] Event {event_count}: parts_count={len(event.content.parts) if event.content.parts else 0}")
-                if event.content.parts:
-                    for i, part in enumerate(event.content.parts):
-                        print(f"[ANALYTICS A2A] Event {event_count} Part {i}: type={type(part).__name__}")
-                        if hasattr(part, 'text') and part.text:
-                            print(f"[ANALYTICS A2A] Event {event_count} Part {i}: has text, length={len(part.text)}")
-                            result_text += part.text
-                        elif hasattr(part, 'function_response') and part.function_response:
-                            print(f"[ANALYTICS A2A] Found function_response")
-                            if hasattr(part.function_response, 'response'):
-                                function_response_text = str(part.function_response.response)
-                            elif hasattr(part.function_response, 'content'):
-                                function_response_text = str(part.function_response.content)
-                        else:
-                            print(f"[ANALYTICS A2A] Event {event_count} Part {i}: no text or function_response, attributes={dir(part)}")
-        
+            if event.content and event.content.parts:
+                for part in event.content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        result_text += part.text
+                    elif hasattr(part, 'function_response') and part.function_response:
+                        if hasattr(part.function_response, 'response'):
+                            function_response_text = str(part.function_response.response)
+                        elif hasattr(part.function_response, 'content'):
+                            function_response_text = str(part.function_response.content)
+
         if not result_text and function_response_text:
             result_text = function_response_text
-            print(f"[ANALYTICS A2A] Using function response as final output")
-            
+
         if not result_text:
             result_text = "No analysis generated."
-            print("[ANALYTICS A2A] Warning: Empty result text")
-        
-        response = {
+            logger.warning("analytics_a2a_empty_result", session_id=session_id)
+
+        logger.info("analytics_a2a_complete", session_id=session_id, events=event_count, chars=len(result_text))
+
+        return {
             "id": request.id,
             "jsonrpc": "2.0",
             "result": {
@@ -128,12 +131,8 @@ async def handle_task(raw_request: Request):
                 "parts": [{"kind": "text", "text": result_text}]
             }
         }
-        print(f"[ANALYTICS A2A] Sending response")
-        return response
     except Exception as e:
-        print(f"Analytics Agent Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("analytics_agent_error", error=str(e), exc_info=True)
         return {
             "id": request.id,
             "jsonrpc": "2.0",
@@ -143,18 +142,16 @@ async def handle_task(raw_request: Request):
             }
         }
 
+
 @router.get("/.well-known/agent-card.json")
 async def get_agent_card():
-    """
-    A2A Protocol: Agent Card endpoint
-    """
+    """A2A Protocol: Agent Card endpoint"""
     card_path = os.path.join(os.path.dirname(__file__), "agent.json")
     with open(card_path, "r") as f:
         return json.load(f)
 
+
 @router.get("/health")
 async def health_check():
-    """
-    Health check endpoint.
-    """
+    """Health check endpoint."""
     return {"status": "healthy", "agent": "analytics_specialist"}

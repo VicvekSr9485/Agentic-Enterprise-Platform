@@ -27,32 +27,30 @@ orchestrator_memory = InMemoryMemoryService()
 
 use_supabase_sessions = os.getenv("USE_SUPABASE_SESSIONS", "false").lower() == "true"
 
+from shared.logging_utils import get_logger
+
+_logger = get_logger("orchestrator.agent")
+
 if use_supabase_sessions:
     from shared.supabase_session_service import get_supabase_session_service
     orchestrator_session_service = get_supabase_session_service(
         table_prefix=os.getenv("SESSION_TABLE_PREFIX", "adk")
     )
-    print("[SESSION] Using Supabase session storage (persistent across deployments)")
+    _logger.info("session_storage", backend="supabase", persistent=True)
 else:
     from google.adk.sessions import InMemorySessionService
     orchestrator_session_service = InMemorySessionService()
-    print("[SESSION] Using in-memory session storage (ephemeral - lost on restart)")
+    _logger.info("session_storage", backend="memory", persistent=False)
 
 async def auto_save_to_memory(callback_context):
-    """
-    After each agent turn, save the current session to long-term memory.
-    This ensures conversation history is preserved in the memory service
-    and can be retrieved with preload_memory tool in future sessions.
-    """
+    """After each agent turn, save the current session to long-term memory."""
     try:
         session = callback_context._invocation_context.session
         memory_service = callback_context._invocation_context.memory_service
-        
         if session and memory_service:
             await memory_service.add_session_to_memory(session)
-            print(f"[MEMORY] Saved session {session.id} to memory")
     except Exception as e:
-        print(f"[MEMORY] Error saving session to memory: {e}")
+        _logger.warning("memory_save_error", error=str(e))
 
 def create_orchestrator():
     """
