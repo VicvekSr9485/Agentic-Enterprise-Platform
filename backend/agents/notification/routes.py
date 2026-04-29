@@ -168,8 +168,12 @@ async def handle_task(request: A2ARequest):
                     if part.text:
                         result_text += part.text
                     elif hasattr(part, 'function_response') and part.function_response:
-                        if hasattr(part.function_response, 'response'):
-                            function_results.append(str(part.function_response.response))
+                        response_data = getattr(part.function_response, 'response', None)
+                        # Skip tool-error envelopes; the agent will retry.
+                        if isinstance(response_data, dict) and "error" in response_data:
+                            continue
+                        if response_data is not None:
+                            function_results.append(str(response_data))
 
         if function_results and not result_text:
             result_text = "\n\n".join(function_results)

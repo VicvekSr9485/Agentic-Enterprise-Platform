@@ -103,10 +103,14 @@ async def handle_task(raw_request: Request):
                     if hasattr(part, 'text') and part.text:
                         result_text += part.text
                     elif hasattr(part, 'function_response') and part.function_response:
-                        if hasattr(part.function_response, 'response'):
-                            function_response_text = str(part.function_response.response)
-                        elif hasattr(part.function_response, 'content'):
-                            function_response_text = str(part.function_response.content)
+                        response_data = getattr(part.function_response, 'response', None) \
+                            or getattr(part.function_response, 'content', None)
+                        # Skip tool-error envelopes — the agent will retry; we don't
+                        # want "missing mandatory parameter" to leak to the user.
+                        if isinstance(response_data, dict) and "error" in response_data:
+                            continue
+                        if response_data is not None:
+                            function_response_text = str(response_data)
 
         if not result_text and function_response_text:
             result_text = function_response_text

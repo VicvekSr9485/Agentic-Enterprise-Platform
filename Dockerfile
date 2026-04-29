@@ -1,36 +1,11 @@
 # syntax=docker/dockerfile:1
-
-# ============================================================================
-# Backend stage — Python/FastAPI agents platform
-# ============================================================================
-FROM python:3.12-slim AS backend
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpq5 \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app/backend
-
-WORKDIR /app
-
-COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --default-timeout=300 --no-cache-dir -r backend/requirements.txt
-
-COPY backend/ backend/
-
-WORKDIR /app/backend
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-EXPOSE 8000
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-
+#
+# Multi-stage build:
+#   - `frontend-build` produces /build/dist
+#   - `frontend` is an nginx image serving the bundle (used by docker-compose)
+#   - `backend` is a Python/FastAPI image (used by docker-compose AND by Hugging
+#     Face Spaces, which always builds the LAST stage in the Dockerfile when no
+#     explicit target is supplied — keep `backend` last for that reason).
 
 # ============================================================================
 # Frontend build stage — produces static dist/
@@ -68,3 +43,35 @@ HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
     CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
+
+
+# ============================================================================
+# Backend stage — Python/FastAPI agents platform (DEFAULT for HF Spaces)
+# ============================================================================
+FROM python:3.12-slim AS backend
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/backend
+
+WORKDIR /app
+
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --default-timeout=300 --no-cache-dir -r backend/requirements.txt
+
+COPY backend/ backend/
+
+WORKDIR /app/backend
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

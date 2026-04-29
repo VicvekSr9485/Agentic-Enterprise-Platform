@@ -10,12 +10,14 @@ from shared.logging_utils import get_logger
 logger = get_logger("agents.inventory.tool")
 
 
-def query_inventory(search_term: str) -> str:
+def query_inventory(search_term: str = "") -> str:
     """
     Search inventory database for products matching the search term.
 
     Args:
-        search_term: Product name, SKU, or category to search for
+        search_term: Product name, SKU, or category. Empty string returns the
+            top items across the catalogue (default), so callers asking for
+            "all products" can call this with no argument.
 
     Returns:
         Formatted string with product information

@@ -92,24 +92,36 @@ async def handle_task(raw_request: Request):
             new_message=message_content
         )
         
+        # Stream events, but only surface the assistant's final TEXT to the user.
+        # function_response parts (tool I/O, including any errored retries) are
+        # held back as a fallback used only when no text was produced.
         result_text = ""
+        function_response_fallback = ""
         async for event in events_async:
-            if event.content:
-                parts = event.content.parts or []
-                for part in parts:
-                    if part.text:
-                        result_text += part.text
+            if not event.content or not event.content.parts:
+                continue
+            for part in event.content.parts:
+                if part.text:
+                    result_text += part.text
+                    continue
+                if hasattr(part, 'function_response') and part.function_response:
+                    try:
+                        response_data = part.function_response.response
+                        if not response_data:
+                            continue
+                        # Skip tool error envelopes: the agent will retry, and
+                        # leaking "missing mandatory parameter" to the user is noise.
+                        if isinstance(response_data, dict) and "error" in response_data:
+                            continue
+                        if isinstance(response_data, dict) and 'result' in response_data:
+                            function_response_fallback += str(response_data['result'])
+                        else:
+                            function_response_fallback += str(response_data)
+                    except Exception as e:
+                        logger.warning("inventory_function_response_parse_error", error=str(e))
 
-                    if hasattr(part, 'function_response') and part.function_response:
-                        try:
-                            response_data = part.function_response.response
-                            if response_data:
-                                if isinstance(response_data, dict) and 'result' in response_data:
-                                    result_text += str(response_data['result'])
-                                else:
-                                    result_text += str(response_data)
-                        except Exception as e:
-                            logger.warning("inventory_function_response_parse_error", error=str(e))
+        if not result_text and function_response_fallback:
+            result_text = function_response_fallback
 
         if not result_text:
             logger.warning("inventory_a2a_empty_result", session_id=session_id)
