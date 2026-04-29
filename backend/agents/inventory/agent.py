@@ -132,8 +132,9 @@ def create_inventory_agent():
     - When providing inventory for email drafting, include ALL relevant details
     """
  
+    from shared.llm_config import make_llm
     agent = LlmAgent(
-        model="gemini-2.5-flash-lite",
+        model=make_llm(),
         name="inventory_agent",
         instruction=system_instructions,
         tools=[query_inventory, get_all_categories, get_low_stock_products],

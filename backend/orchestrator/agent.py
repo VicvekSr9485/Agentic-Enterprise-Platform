@@ -240,8 +240,9 @@ def create_orchestrator():
     """
     
     # Create Orchestrator Agent
+    from shared.llm_config import make_llm
     agent = LlmAgent(
-        model="gemini-2.5-flash-lite",
+        model=make_llm(),
         name="orchestrator",
         instruction=system_instructions,
         sub_agents=[inventory_worker, policy_worker, analytics_worker, orders_worker, notification_worker],

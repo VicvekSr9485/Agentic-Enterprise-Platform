@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 from google.adk.runners import Runner
 from google.adk.events import Event
 from google.genai import types
-import google.generativeai as genai
 from orchestrator.agent import create_orchestrator, get_memory_service, get_session_service
 from orchestrator.hitl_manager import hitl_manager
 from orchestrator.intent_classifier import (
@@ -23,6 +22,7 @@ from shared.agent_metrics import agent_metrics
 from shared.retry_handler import get_retry_handler, async_retry_with_backoff, RetryConfig
 from shared.logging_utils import get_logger, safe_preview
 from shared.observability import trace_span
+from shared.llm_config import chat_completion
 
 logger = get_logger("orchestrator.routes")
 
@@ -31,9 +31,6 @@ router = APIRouter()
 session_service = get_session_service()
 memory_service = get_memory_service()
 orchestrator_agent = create_orchestrator()
-
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-intent_classifier_model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
 MAX_PROMPT_CHARS = int(os.getenv("MAX_PROMPT_CHARS", "8000"))
 MAX_SESSION_ID_CHARS = 128
@@ -144,17 +141,14 @@ async def chat_endpoint(request: ChatRequest, http_request: Request):
         
         @async_retry_with_backoff(
             config=RetryConfig(max_retries=2, initial_delay=1.0, max_delay=10.0),
-            log_func=lambda msg: print(f"[INTENT CLASSIFIER RETRY] {msg}")
+            log_func=lambda msg: logger.warning("intent_classifier_retry", message=msg),
         )
-        async def classify_intent():
-            return await asyncio.to_thread(
-                intent_classifier_model.generate_content,
-                classification_prompt
-            )
-        
+        async def classify_intent() -> str:
+            return await asyncio.to_thread(chat_completion, classification_prompt)
+
         try:
-            llm_response = await asyncio.wait_for(classify_intent(), timeout=15.0)
-            intent_classification = parse_intent_from_llm_response(llm_response.text)
+            llm_text = await asyncio.wait_for(classify_intent(), timeout=15.0)
+            intent_classification = parse_intent_from_llm_response(llm_text)
 
             if intent_classification:
                 logger.info(

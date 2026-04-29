@@ -97,9 +97,9 @@ def create_policy_agent():
          Then provide the policy details with source citation.
     """
     
-    # Create Agent with direct search tool
+    from shared.llm_config import make_llm
     agent = LlmAgent(
-        model="gemini-2.5-flash-lite",
+        model=make_llm(),
         name="policy_agent",
         instruction=system_instructions,
         tools=[search_policy_documents],
