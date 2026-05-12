@@ -34,7 +34,7 @@ The Enterprise Agents Platform is a **production-ready, context-aware AI agent o
 ### ✅ Production Status (v2.1.0)
 
 **Test Coverage**: 100% (all core functionalities operational)
-- 5 of 5 agents fully operational
+- 5 of 5 worker agents fully operational
 - Multi-agent coordination tested and verified
 - Session persistence and context awareness functional
 - HITL workflow operational
@@ -42,7 +42,7 @@ The Enterprise Agents Platform is a **production-ready, context-aware AI agent o
 
 ### Key Capabilities
 
-- **Six Specialized Agents**: Orchestrator + Inventory + Policy + Notification + Analytics + Orders
+- **1 Orchestrator + 5 Worker Agents**: Orchestrator coordinates Inventory, Policy, Notification, Analytics, and Orders specialists
 - **Intelligent Intent Classification**: LLM-powered routing to appropriate specialized agents
 - **Multi-Agent Coordination**: Sequential and parallel execution strategies with context enrichment
 - **Memory Persistence**: SQLite-backed session storage with long-term memory service
@@ -80,9 +80,10 @@ The Enterprise Agents Platform is a **production-ready, context-aware AI agent o
   - `google.adk.agents.RemoteA2aAgent`: Cross-agent communication primitives
   - `google.adk.events.Event`: Structured event storage with user/agent roles
   - `preload_memory_tool`: Automatic memory retrieval from previous sessions
-- **Google Generative AI SDK** (0.8.3): LLM integration for Gemini models
-  - Model: `gemini-2.0-flash-exp` (orchestrator, intent classification)
-  - Model: `gemini-2.5-flash-lite` (specialized agents)
+- **LLM Routing** (provider-agnostic via LiteLLM)
+  - Orchestrator + intent classification: `openai/gpt-4o-mini` by default (configurable via `LLM_MODEL`; e.g. `gemini/gemini-2.5-flash-lite`)
+  - Specialized worker agents: `gemini-2.5-flash-lite` via Google ADK
+- **Google Generative AI SDK** (0.8.5): native Gemini integration for worker agents
 
 ### Database & Storage
 - **Supabase (PostgreSQL)**: Structured data storage with pgvector extension

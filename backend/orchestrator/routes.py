@@ -14,7 +14,7 @@ from orchestrator.intent_classifier import (
     INTENT_CLASSIFICATION_PROMPT,
     parse_intent_from_llm_response
 )
-from agents.notification.email_draft_tool import send_email
+from agents.notification.email_draft_tool import send_email, _build_html
 import re
 import time
 
@@ -80,10 +80,11 @@ async def chat_endpoint(request: ChatRequest, http_request: Request):
                         body_end = len(draft)
                     body = draft[body_start:body_end].strip()
 
-                    send_result = send_email(to_email, subject, body)
+                    html_body = _build_html(subject, body)
+                    send_result = send_email(to_email, subject, body, html_body=html_body)
 
                     return ChatResponse(
-                        response=f"Approved! Email sent.\n\n{send_result}\n\n{approval.draft_content}",
+                        response=f"Approved! Email sent.\n\n{send_result}",
                         session_id=request.session_id,
                         trace_id=request_id or "approval_confirmed",
                         pending_approval=False
@@ -91,7 +92,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request):
 
             return ChatResponse(
                 response=(
-                    f"Approved! {approval.action_type} has been executed.\n\n{approval.draft_content}"
+                    f"Approved! {approval.action_type} has been executed."
                     if approval
                     else "No pending approval was found for this session."
                 ),

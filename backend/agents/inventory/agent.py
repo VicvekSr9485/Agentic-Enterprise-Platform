@@ -2,12 +2,13 @@
 Inventory Agent - Data Specialist with Session Persistence
 ==========================================================
 This worker agent specializes in product inventory queries with READ-ONLY
-database access via direct Python tools (fallback from MCP due to connection issues).
+database access via direct Python tools (chosen over MCP to avoid IPC overhead
+on the hot path).
 
 Architecture:
-- Model: Gemini 1.5 Flash (Worker-grade LLM)
-- Storage: DatabaseSessionService (Session persistence for conversational continuity)
-- Protocol: Direct PostgreSQL queries via psycopg2
+- Model: Gemini 2.5 Flash Lite (Worker-grade LLM)
+- Storage: InMemorySessionService (per-process session continuity)
+- Protocol: Direct Python tools calling the Supabase REST API (PostgREST)
 - Safety: Read-only access, input validation, retry logic
 """
 
@@ -31,9 +32,9 @@ def create_inventory_agent():
     Creates the inventory agent with direct Python tools for database access.
     
     The agent:
-    1. Uses DatabaseSessionService for session persistence across restarts
-    2. Connects to PostgreSQL via psycopg2 for reliable inventory queries
-    3. Implements retry logic for transient database failures
+    1. Uses InMemorySessionService for per-process session continuity
+    2. Queries inventory via the Supabase REST API (PostgREST) — no connection pool
+    3. Implements retry logic with exponential backoff for transient failures
     4. Validates inputs and provides clear error messages
     5. Uses Gemini 2.5 Flash Lite for efficient query processing
     

@@ -5,7 +5,8 @@ This agent serves as the central coordinator with Memory capability to manage
 and route requests to specialized sub-agents via A2A Protocol.
 
 Architecture:
-- Model: Gemini 1.5 Pro (Coordinator-grade LLM)
+- Model: Configured via LLM_MODEL env var (default: openai/gpt-4o-mini via LiteLLM;
+  swap to gemini/gemini-2.5-flash-lite for native Gemini)
 - Storage: InMemoryMemoryService (Global Context Management)
 - Protocol: A2A Client (RemoteA2aAgent for sub-agent communication)
 - Role: Intent routing, context aggregation, and delegation
@@ -60,7 +61,7 @@ def create_orchestrator():
     1. Uses InMemoryMemoryService to maintain global context across sessions
     2. Delegates to specialized sub-agents via RemoteA2aAgent (A2A Protocol)
     3. Uses PreloadMemoryTool to retrieve context at the start of each turn
-    4. Employs Gemini 1.5 Pro for sophisticated routing and synthesis
+    4. Routes through the configured LLM (LLM_MODEL env var) via LiteLLM
     
     Returns:
         LlmAgent: Configured orchestrator agent with memory and sub-agents

@@ -13,27 +13,30 @@ services:
       # Server Configuration
       - HOST=0.0.0.0
       - PORT=8000
-      
-      # Google AI
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      
+
+      # LLM Configuration (OpenAI via LiteLLM)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-openai/gpt-4o-mini}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+
       # Supabase Configuration
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - SUPABASE_DB_URL=${SUPABASE_DB_URL}
-      
+
       # SMTP Configuration
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - FROM_EMAIL=${FROM_EMAIL}
-      
+      - EMAIL_DEMO_MODE=${EMAIL_DEMO_MODE:-false}
+
       # Feature Flags
       - ENABLE_HITL=${ENABLE_HITL:-true}
       - ENABLE_MEMORY=${ENABLE_MEMORY:-true}
       - SESSION_PERSISTENCE=${SESSION_PERSISTENCE:-true}
-      
+
       # Branding
       - COMPANY_NAME=${COMPANY_NAME:-Company}
       - EMAIL_SIGNATURE=${EMAIL_SIGNATURE:-Best regards\nCompany}
