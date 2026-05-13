@@ -27,7 +27,7 @@ One **orchestrator** routes requests to five specialist worker agents over the A
         │   React + Vite UI   │  (Vercel)
         └──────────┬──────────┘
                    │  POST /orchestrator/chat
-                   │  Authorization: Bearer $PLATFORM_API_KEY
+                   │  Authorization: Bearer $AUTH_KEY
                    ▼
         ┌─────────────────────┐
         │   FastAPI gateway   │

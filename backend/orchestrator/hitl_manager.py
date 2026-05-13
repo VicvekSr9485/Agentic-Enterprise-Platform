@@ -87,7 +87,6 @@ class HITLManager:
         )
         return approval_id
 
-    # -------------------------------------------------------------------- get
     def get_pending_approval(
         self,
         session_id: str,
@@ -100,7 +99,6 @@ class HITLManager:
             return None
         return approval
 
-    # ----------------------------------------------------------------- approve
     def approve(
         self,
         session_id: str,
@@ -116,7 +114,7 @@ class HITLManager:
             pass
         return approval
 
-    # ------------------------------------------------------------------ reject
+    
     def reject(
         self,
         session_id: str,
@@ -124,7 +122,6 @@ class HITLManager:
     ) -> Optional[PendingApproval]:
         return self.approve(session_id, user_id=user_id)
 
-    # -------------------------------------------------------------------- has
     def has_pending_approval(
         self,
         session_id: str,
@@ -132,7 +129,6 @@ class HITLManager:
     ) -> bool:
         return self.get_pending_approval(session_id, user_id=user_id) is not None
 
-    # ------------------------------------------------------------------ helpers
     def _discard(self, user_id: str, session_id: str) -> None:
         with self._lock:
             self._pending.pop(_approval_key(user_id, session_id), None)
